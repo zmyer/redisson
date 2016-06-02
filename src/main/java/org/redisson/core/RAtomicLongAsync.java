@@ -15,28 +15,26 @@
  */
 package org.redisson.core;
 
-import io.netty.util.concurrent.Future;
-
 public interface RAtomicLongAsync extends RExpirableAsync {
 
-    Future<Boolean> compareAndSetAsync(long expect, long update);
+    RFuture<Boolean> compareAndSetAsync(long expect, long update);
 
-    Future<Long> addAndGetAsync(long delta);
+    RFuture<Long> addAndGetAsync(long delta);
 
-    Future<Long> decrementAndGetAsync();
+    RFuture<Long> decrementAndGetAsync();
 
-    Future<Long> getAsync();
+    RFuture<Long> getAsync();
 
-    Future<Long> getAndAddAsync(long delta);
+    RFuture<Long> getAndAddAsync(long delta);
 
-    Future<Long> getAndSetAsync(long newValue);
+    RFuture<Long> getAndSetAsync(long newValue);
 
-    Future<Long> incrementAndGetAsync();
+    RFuture<Long> incrementAndGetAsync();
 
-    Future<Long> getAndIncrementAsync();
+    RFuture<Long> getAndIncrementAsync();
 
-    Future<Long> getAndDecrementAsync();
+    RFuture<Long> getAndDecrementAsync();
 
-    Future<Void> setAsync(long newValue);
+    RFuture<Void> setAsync(long newValue);
 
 }

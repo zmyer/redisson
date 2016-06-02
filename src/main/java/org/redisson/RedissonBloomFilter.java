@@ -34,8 +34,8 @@ import org.redisson.client.protocol.decoder.ObjectMapReplayDecoder;
 import org.redisson.command.CommandBatchService;
 import org.redisson.command.CommandExecutor;
 import org.redisson.core.RBloomFilter;
+import org.redisson.core.RFuture;
 
-import io.netty.util.concurrent.Future;
 import net.openhft.hashing.LongHashFunction;
 
 /**
@@ -188,9 +188,9 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
     @Override
     public int count() {
         CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
-        Future<Map<String, String>> configFuture = executorService.readAsync(getConfigName(), StringCodec.INSTANCE,
+        RFuture<Map<String, String>> configFuture = executorService.readAsync(getConfigName(), StringCodec.INSTANCE,
                 new RedisCommand<Map<Object, Object>>("HGETALL", new ObjectMapReplayDecoder()), getConfigName());
-        Future<Long> cardinalityFuture = executorService.readAsync(getName(), codec, RedisCommands.BITCOUNT, getName());
+        RFuture<Long> cardinalityFuture = executorService.readAsync(getName(), codec, RedisCommands.BITCOUNT, getName());
         executorService.execute();
 
         readConfig(configFuture.getNow());
@@ -199,12 +199,12 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
     }
 
     @Override
-    public Future<Boolean> deleteAsync() {
+    public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, getName(), getConfigName());
     }
 
     private void readConfig() {
-        Future<Map<String, String>> future = commandExecutor.readAsync(getConfigName(), StringCodec.INSTANCE,
+        RFuture<Map<String, String>> future = commandExecutor.readAsync(getConfigName(), StringCodec.INSTANCE,
                 new RedisCommand<Map<Object, Object>>("HGETALL", new ObjectMapReplayDecoder()), getConfigName());
         Map<String, String> config = commandExecutor.get(future);
 

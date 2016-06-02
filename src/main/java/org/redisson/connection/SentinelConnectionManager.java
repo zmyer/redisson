@@ -40,12 +40,11 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.pubsub.PubSubType;
 import org.redisson.cluster.ClusterSlotRange;
 import org.redisson.connection.ClientConnectionsEntry.FreezeReason;
+import org.redisson.core.RFuture;
 import org.redisson.misc.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.internal.PlatformDependent;
 
 public class SentinelConnectionManager extends MasterSlaveConnectionManager {
@@ -115,14 +114,18 @@ public class SentinelConnectionManager extends MasterSlaveConnectionManager {
         }
         init(c);
 
-        List<Future<RedisPubSubConnection>> connectionFutures = new ArrayList<Future<RedisPubSubConnection>>(cfg.getSentinelAddresses().size());
+        List<RFuture<RedisPubSubConnection>> connectionFutures = new ArrayList<>(cfg.getSentinelAddresses().size());
         for (URI addr : cfg.getSentinelAddresses()) {
-            Future<RedisPubSubConnection> future = registerSentinel(cfg, addr, c);
+            RFuture<RedisPubSubConnection> future = registerSentinel(cfg, addr, c);
             connectionFutures.add(future);
         }
 
-        for (Future<RedisPubSubConnection> future : connectionFutures) {
-            future.awaitUninterruptibly();
+        for (RFuture<RedisPubSubConnection> future : connectionFutures) {
+            try {
+                future.join();
+            } catch (Exception e) {
+                // skip
+            }
         }
     }
 
@@ -130,67 +133,61 @@ public class SentinelConnectionManager extends MasterSlaveConnectionManager {
     protected MasterSlaveEntry createMasterSlaveEntry(MasterSlaveServersConfig config,
             HashSet<ClusterSlotRange> slots) {
         MasterSlaveEntry entry = new MasterSlaveEntry(slots, this, config);
-        List<Future<Void>> fs = entry.initSlaveBalancer(disconnectedSlaves);
-        for (Future<Void> future : fs) {
-            future.syncUninterruptibly();
+        List<RFuture<Void>> fs = entry.initSlaveBalancer(disconnectedSlaves);
+        for (RFuture<Void> future : fs) {
+            syncUninterruptibly(future);
         }
-        Future<Void> f = entry.setupMasterEntry(config.getMasterAddress().getHost(), config.getMasterAddress().getPort());
-        f.syncUninterruptibly();
+        RFuture<Void> f = entry.setupMasterEntry(config.getMasterAddress().getHost(), config.getMasterAddress().getPort());
+        syncUninterruptibly(f);
         return entry;
     }
 
-    private Future<RedisPubSubConnection> registerSentinel(final SentinelServersConfig cfg, final URI addr, final MasterSlaveServersConfig c) {
+    private RFuture<RedisPubSubConnection> registerSentinel(final SentinelServersConfig cfg, final URI addr, final MasterSlaveServersConfig c) {
         RedisClient client = createClient(addr.getHost(), addr.getPort(), c.getConnectTimeout());
         RedisClient oldClient = sentinels.putIfAbsent(addr.getHost() + ":" + addr.getPort(), client);
         if (oldClient != null) {
             return newSucceededFuture(null);
         }
 
-        Future<RedisPubSubConnection> pubsubFuture = client.connectPubSubAsync();
-        pubsubFuture.addListener(new FutureListener<RedisPubSubConnection>() {
-            @Override
-            public void operationComplete(Future<RedisPubSubConnection> future) throws Exception {
-                if (!future.isSuccess()) {
-                    log.warn("Can't connect to sentinel: {}:{}", addr.getHost(), addr.getPort());
-                    return;
+        RFuture<RedisPubSubConnection> pubsubFuture = client.connectPubSubAsync();
+        pubsubFuture.thenAccept(pubsub -> {
+            pubsub.addListener(new BaseRedisPubSubListener<String>() {
+
+                @Override
+                public void onMessage(String channel, String msg) {
+                    if ("+sentinel".equals(channel)) {
+                        onSentinelAdded(cfg, msg, c);
+                    }
+                    if ("+slave".equals(channel)) {
+                        onSlaveAdded(addr, msg);
+                    }
+                    if ("+sdown".equals(channel)) {
+                        onNodeDown(addr, msg);
+                    }
+                    if ("-sdown".equals(channel)) {
+                        onNodeUp(addr, msg);
+                    }
+                    if ("+switch-master".equals(channel)) {
+                        onMasterChange(cfg, addr, msg);
+                    }
                 }
 
-                RedisPubSubConnection pubsub = future.getNow();
-                pubsub.addListener(new BaseRedisPubSubListener<String>() {
-
-                    @Override
-                    public void onMessage(String channel, String msg) {
-                        if ("+sentinel".equals(channel)) {
-                            onSentinelAdded(cfg, msg, c);
-                        }
-                        if ("+slave".equals(channel)) {
-                            onSlaveAdded(addr, msg);
-                        }
-                        if ("+sdown".equals(channel)) {
-                            onNodeDown(addr, msg);
-                        }
-                        if ("-sdown".equals(channel)) {
-                            onNodeUp(addr, msg);
-                        }
-                        if ("+switch-master".equals(channel)) {
-                            onMasterChange(cfg, addr, msg);
-                        }
+                @Override
+                public boolean onStatus(PubSubType type, String channel) {
+                    if (type == PubSubType.SUBSCRIBE) {
+                        log.debug("subscribed to channel: {} from Sentinel {}:{}", channel, addr.getHost(), addr.getPort());
                     }
+                    return true;
+                }
+            });
 
-                    @Override
-                    public boolean onStatus(PubSubType type, String channel) {
-                        if (type == PubSubType.SUBSCRIBE) {
-                            log.debug("subscribed to channel: {} from Sentinel {}:{}", channel, addr.getHost(), addr.getPort());
-                        }
-                        return true;
-                    }
-                });
-
-                pubsub.subscribe(StringCodec.INSTANCE, "+switch-master", "+sdown", "-sdown", "+slave", "+sentinel");
-                log.info("sentinel: {}:{} added", addr.getHost(), addr.getPort());
-            }
+            pubsub.subscribe(StringCodec.INSTANCE, "+switch-master", "+sdown", "-sdown", "+slave", "+sentinel");
+            log.info("sentinel: {}:{} added", addr.getHost(), addr.getPort());
+        }).exceptionally(cause -> {
+            log.warn("Can't connect to sentinel: {}:{}", addr.getHost(), addr.getPort());
+            return null;
         });
-
+        
         return pubsubFuture;
     }
 
@@ -214,25 +211,19 @@ public class SentinelConnectionManager extends MasterSlaveConnectionManager {
             final String ip = parts[2];
             final String port = parts[3];
 
-            final String slaveAddr = ip + ":" + port;
+            String slaveAddr = ip + ":" + port;
 
             // to avoid addition twice
             if (slaves.putIfAbsent(slaveAddr, true) == null && config.getReadMode() == ReadMode.SLAVE) {
-                Future<Void> future = getEntry(singleSlotRange).addSlave(ip, Integer.valueOf(port));
-                future.addListener(new FutureListener<Void>() {
-                    @Override
-                    public void operationComplete(Future<Void> future) throws Exception {
-                        if (!future.isSuccess()) {
-                            slaves.remove(slaveAddr);
-                            log.error("Can't add slave: " + slaveAddr, future.cause());
-                            return;
-                        }
-
-                        if (getEntry(singleSlotRange).slaveUp(ip, Integer.valueOf(port), FreezeReason.MANAGER)) {
-                            String slaveAddr = ip + ":" + port;
-                            log.info("slave: {} added", slaveAddr);
-                        }
+                RFuture<Void> future = getEntry(singleSlotRange).addSlave(ip, Integer.valueOf(port));
+                future.thenAccept(r -> {
+                    if (getEntry(singleSlotRange).slaveUp(ip, Integer.valueOf(port), FreezeReason.MANAGER)) {
+                        log.info("slave: {} added", slaveAddr);
                     }
+                }).exceptionally(cause -> {
+                    slaves.remove(slaveAddr);
+                    log.error("Can't add slave: " + slaveAddr, cause);
+                    return null;
                 });
             } else {
                 slaveUp(ip, port);

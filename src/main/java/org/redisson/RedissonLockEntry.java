@@ -15,8 +15,6 @@
  */
 package org.redisson;
 
-import io.netty.util.concurrent.Promise;
-
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 
@@ -25,10 +23,10 @@ public class RedissonLockEntry implements PubSubEntry<RedissonLockEntry> {
     private int counter;
 
     private final Semaphore latch;
-    private final Promise<RedissonLockEntry> promise;
+    private final RedissonFuture<RedissonLockEntry> promise;
     private final ConcurrentLinkedQueue<Runnable> listeners = new ConcurrentLinkedQueue<Runnable>();
 
-    public RedissonLockEntry(Promise<RedissonLockEntry> promise) {
+    public RedissonLockEntry(RedissonFuture<RedissonLockEntry> promise) {
         super();
         this.latch = new Semaphore(0);
         this.promise = promise;
@@ -42,7 +40,7 @@ public class RedissonLockEntry implements PubSubEntry<RedissonLockEntry> {
         return --counter;
     }
 
-    public Promise<RedissonLockEntry> getPromise() {
+    public RedissonFuture<RedissonLockEntry> getPromise() {
         return promise;
     }
 

@@ -32,6 +32,7 @@ import org.redisson.connection.RedisClientEntry;
 import org.redisson.core.Node;
 import org.redisson.core.NodeType;
 import org.redisson.core.NodesGroup;
+import org.redisson.core.RFuture;
 
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
@@ -66,56 +67,52 @@ public class RedisNodes<N extends Node> implements NodesGroup<N> {
     @Override
     public boolean pingAll() {
         List<RedisClientEntry> clients = new ArrayList<RedisClientEntry>(connectionManager.getClients());
-        final Map<RedisConnection, Future<String>> result = new HashMap<RedisConnection, Future<String>>(clients.size());
+        final Map<RedisConnection, RFuture<String>> result = new HashMap<>(clients.size());
         final CountDownLatch latch = new CountDownLatch(clients.size());
         for (RedisClientEntry entry : clients) {
-            Future<RedisConnection> f = entry.getClient().connectAsync();
-            f.addListener(new FutureListener<RedisConnection>() {
-                @Override
-                public void operationComplete(Future<RedisConnection> future) throws Exception {
-                    if (future.isSuccess()) {
-                        final RedisConnection c = future.getNow();
-                        Promise<RedisConnection> connectionFuture = connectionManager.newPromise();
-                        connectionManager.getConnectListener().onConnect(connectionFuture, c, null, connectionManager.getConfig());
-                        connectionFuture.addListener(new FutureListener<RedisConnection>() {
-                            @Override
-                            public void operationComplete(Future<RedisConnection> future) throws Exception {
-                                Future<String> r = c.async(RedisCommands.PING);
-                                result.put(c, r);
-                                latch.countDown();
-                            }
-                        });
-                    } else {
+            RFuture<RedisConnection> f = entry.getClient().connectAsync();
+            f.thenAccept(c -> {
+                Promise<RedisConnection> connectionFuture = connectionManager.newPromise();
+                connectionManager.getConnectListener().onConnect(connectionFuture, c, null, connectionManager.getConfig());
+                connectionFuture.addListener(new FutureListener<RedisConnection>() {
+                    @Override
+                    public void operationComplete(Future<RedisConnection> future) throws Exception {
+                        RFuture<String> r = c.async(RedisCommands.PING);
+                        result.put(c, r);
                         latch.countDown();
                     }
-                }
+                });
+            }).exceptionally(cause -> {
+                latch.countDown();
+                return null;
             });
         }
 
-        long time = System.currentTimeMillis();
+        boolean res = true;
         try {
+            long time = System.currentTimeMillis();
             latch.await(connectionManager.getConfig().getConnectTimeout(), TimeUnit.MILLISECONDS);
+
+            if (System.currentTimeMillis() - time >= connectionManager.getConfig().getConnectTimeout()) {
+                for (RedisConnection conn : result.keySet()) {
+                    conn.closeAsync();
+                }
+                return false;
+            }
+    
+            time = System.currentTimeMillis();
+            for (Entry<RedisConnection, RFuture<String>> entry : result.entrySet()) {
+                RFuture<String> f = entry.getValue();
+                f.await(connectionManager.getConfig().getPingTimeout(), TimeUnit.MILLISECONDS);
+                if (!"PONG".equals(f.getNow())) {
+                    res = false;
+                }
+                entry.getKey().closeAsync();
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
-        if (System.currentTimeMillis() - time >= connectionManager.getConfig().getConnectTimeout()) {
-            for (Entry<RedisConnection, Future<String>> entry : result.entrySet()) {
-                entry.getKey().closeAsync();
-            }
-            return false;
-        }
-
-        time = System.currentTimeMillis();
-        boolean res = true;
-        for (Entry<RedisConnection, Future<String>> entry : result.entrySet()) {
-            Future<String> f = entry.getValue();
-            f.awaitUninterruptibly(connectionManager.getConfig().getPingTimeout(), TimeUnit.MILLISECONDS);
-            if (!"PONG".equals(f.getNow())) {
-                res = false;
-            }
-            entry.getKey().closeAsync();
-        }
 
         // true and no futures missed during client connection
         return res && result.size() == clients.size();

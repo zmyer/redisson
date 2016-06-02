@@ -15,14 +15,13 @@
  */
 package org.redisson.pubsub;
 
+import org.redisson.RedissonFuture;
 import org.redisson.RedissonLockEntry;
-
-import io.netty.util.concurrent.Promise;
 
 public class SemaphorePubSub extends PublishSubscribe<RedissonLockEntry> {
 
     @Override
-    protected RedissonLockEntry createEntry(Promise<RedissonLockEntry> newPromise) {
+    protected RedissonLockEntry createEntry(RedissonFuture<RedissonLockEntry> newPromise) {
         return new RedissonLockEntry(newPromise);
     }
 

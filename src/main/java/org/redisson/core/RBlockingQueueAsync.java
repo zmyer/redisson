@@ -41,18 +41,18 @@ public interface RBlockingQueueAsync<V> extends RQueueAsync<V> {
      *         specified waiting time elapses before an element is available
      * @throws InterruptedException if interrupted while waiting
      */
-    Future<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames);
+    RFuture<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames);
 
-    Future<Integer> drainToAsync(Collection<? super V> c, int maxElements);
+    RFuture<Integer> drainToAsync(Collection<? super V> c, int maxElements);
 
-    Future<Integer> drainToAsync(Collection<? super V> c);
+    RFuture<Integer> drainToAsync(Collection<? super V> c);
 
-    Future<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit);
+    RFuture<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit);
 
-    Future<V> pollAsync(long timeout, TimeUnit unit);
+    RFuture<V> pollAsync(long timeout, TimeUnit unit);
 
-    Future<V> takeAsync();
+    RFuture<V> takeAsync();
 
-    Future<Boolean> putAsync(V e);
+    RFuture<Boolean> putAsync(V e);
 
 }

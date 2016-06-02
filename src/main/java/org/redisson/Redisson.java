@@ -50,6 +50,7 @@ import org.redisson.core.RBucket;
 import org.redisson.core.RBuckets;
 import org.redisson.core.RCountDownLatch;
 import org.redisson.core.RDeque;
+import org.redisson.core.RFuture;
 import org.redisson.core.RGeo;
 import org.redisson.core.RHyperLogLog;
 import org.redisson.core.RKeys;
@@ -238,7 +239,7 @@ public class Redisson implements RedissonClient {
             return Collections.emptyMap();
         }
 
-        Future<List<Object>> future = commandExecutor.readAsync(keys[0], RedisCommands.MGET, keys);
+        RFuture<List<Object>> future = commandExecutor.readAsync(keys[0], RedisCommands.MGET, keys);
         List<Object> values = commandExecutor.get(future);
         Map<String, V> result = new HashMap<String, V>(values.size());
         int index = 0;

@@ -18,6 +18,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.redisson.RedisRunner.RedisProcess;
 import org.redisson.core.RBlockingQueue;
+import org.redisson.core.RFuture;
 
 import io.netty.util.concurrent.Future;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +37,7 @@ public class RedissonBlockingQueueTest extends BaseTest {
         config.useSingleServer().setAddress("127.0.0.1:6319");
         RedissonClient redisson = Redisson.create(config);
         final RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("queue:pollTimeout");
-        Future<Integer> f = queue1.pollAsync(5, TimeUnit.SECONDS);
+        RFuture<Integer> f = queue1.pollAsync(5, TimeUnit.SECONDS);
         
         f.await(1, TimeUnit.SECONDS);
         runner.stop();
@@ -57,7 +58,7 @@ public class RedissonBlockingQueueTest extends BaseTest {
         RedissonClient redisson = Redisson.create(config);
         
         RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("queue:pollany");
-        Future<Integer> f = queue1.pollAsync(10, TimeUnit.SECONDS);
+        RFuture<Integer> f = queue1.pollAsync(10, TimeUnit.SECONDS);
         f.await(1, TimeUnit.SECONDS);
         runner.stop();
 
@@ -92,7 +93,7 @@ public class RedissonBlockingQueueTest extends BaseTest {
         config.useSingleServer().setAddress("127.0.0.1:6319");
         RedissonClient redisson = Redisson.create(config);
         RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("testTakeReattach");
-        Future<Integer> f = queue1.takeAsync();
+        RFuture<Integer> f = queue1.takeAsync();
         f.await(1, TimeUnit.SECONDS);
         runner.stop();
 
@@ -122,7 +123,7 @@ public class RedissonBlockingQueueTest extends BaseTest {
         RedissonClient redisson = Redisson.create(config);
         RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("testTakeAsyncCancel");
         for (int i = 0; i < 10; i++) {
-            Future<Integer> f = queue1.takeAsync();
+            RFuture<Integer> f = queue1.takeAsync();
             f.cancel(true);
         }
         assertThat(queue1.add(1)).isTrue();
@@ -140,7 +141,7 @@ public class RedissonBlockingQueueTest extends BaseTest {
         RedissonClient redisson = Redisson.create(config);
         RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("queue:pollany");
         for (int i = 0; i < 10; i++) {
-            Future<Integer> f = queue1.pollAsync(1, TimeUnit.SECONDS);
+            RFuture<Integer> f = queue1.pollAsync(1, TimeUnit.SECONDS);
             f.cancel(true);
         }
         assertThat(queue1.add(1)).isTrue();

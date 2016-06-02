@@ -24,11 +24,10 @@ import java.util.concurrent.TimeUnit;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.core.RFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.internal.PlatformDependent;
 
 /**
@@ -70,45 +69,38 @@ public class EvictionScheduler {
 
         @Override
         public void run() {
-            Future<Integer> future = cleanupExpiredEntires(name, timeoutSetName, maxIdleSetName, keysLimit, multimap);
+            RFuture<Integer> future = cleanupExpiredEntires(name, timeoutSetName, maxIdleSetName, keysLimit, multimap);
 
-            future.addListener(new FutureListener<Integer>() {
-                @Override
-                public void operationComplete(Future<Integer> future) throws Exception {
-                    if (!future.isSuccess()) {
-                        schedule();
-                        return;
+            future.thenAccept(size -> {
+                if (sizeHistory.size() == 2) {
+                    if (sizeHistory.peekFirst() > sizeHistory.peekLast()
+                            && sizeHistory.peekLast() > size) {
+                        delay = Math.min(maxDelay, (int)(delay*1.5));
                     }
 
-                    Integer size = future.getNow();
+//                    if (sizeHistory.peekFirst() < sizeHistory.peekLast()
+//                            && sizeHistory.peekLast() < size) {
+//                        prevDelay = Math.max(minDelay, prevDelay/2);
+//                    }
 
-                    if (sizeHistory.size() == 2) {
-                        if (sizeHistory.peekFirst() > sizeHistory.peekLast()
-                                && sizeHistory.peekLast() > size) {
+                    if (sizeHistory.peekFirst() == sizeHistory.peekLast()
+                            && sizeHistory.peekLast() == size) {
+                        if (size == keysLimit) {
+                            delay = Math.max(minDelay, delay/4);
+                        }
+                        if (size == 0) {
                             delay = Math.min(maxDelay, (int)(delay*1.5));
                         }
-
-//                        if (sizeHistory.peekFirst() < sizeHistory.peekLast()
-//                                && sizeHistory.peekLast() < size) {
-//                            prevDelay = Math.max(minDelay, prevDelay/2);
-//                        }
-
-                        if (sizeHistory.peekFirst() == sizeHistory.peekLast()
-                                && sizeHistory.peekLast() == size) {
-                            if (size == keysLimit) {
-                                delay = Math.max(minDelay, delay/4);
-                            }
-                            if (size == 0) {
-                                delay = Math.min(maxDelay, (int)(delay*1.5));
-                            }
-                        }
-
-                        sizeHistory.pollFirst();
                     }
 
-                    sizeHistory.add(size);
-                    schedule();
+                    sizeHistory.pollFirst();
                 }
+
+                sizeHistory.add(size);
+                schedule();
+            }).exceptionally(cause -> {
+                schedule();
+                return null;
             });
         }
 
@@ -169,27 +161,25 @@ public class EvictionScheduler {
             return;
         }
 
-        Future<Integer> future = cleanupExpiredEntires(name, timeoutSetName, null, valuesAmountToClean, false);
+        RFuture<Integer> future = cleanupExpiredEntires(name, timeoutSetName, null, valuesAmountToClean, false);
 
-        future.addListener(new FutureListener<Integer>() {
-            @Override
-            public void operationComplete(Future<Integer> future) throws Exception {
-                executor.getConnectionManager().getGroup().schedule(new Runnable() {
-                    @Override
-                    public void run() {
-                        lastExpiredTime.remove(name, lastExpired);
-                    }
-                }, expireTaskExecutionDelay*3, TimeUnit.SECONDS);
-
-                if (!future.isSuccess()) {
-                    log.warn("Can't execute clean task for expired values. RSetCache name: " + name, future.cause());
-                    return;
+        future.handle((r, cause) -> {
+            executor.getConnectionManager().getGroup().schedule(new Runnable() {
+                @Override
+                public void run() {
+                    lastExpiredTime.remove(name, lastExpired);
                 }
+            }, expireTaskExecutionDelay*3, TimeUnit.SECONDS);
+
+            if (cause != null) {
+                log.warn("Can't execute clean task for expired values. RSetCache name: " + name, cause);
             }
+            
+            return null;
         });
     }
 
-    private Future<Integer> cleanupExpiredEntires(String name, String timeoutSetName, String maxIdleSetName, int keysLimit, boolean multimap) {
+    private RFuture<Integer> cleanupExpiredEntires(String name, String timeoutSetName, String maxIdleSetName, int keysLimit, boolean multimap) {
         if (multimap) {
             return executor.evalWriteAsync(name, LongCodec.INSTANCE, RedisCommands.EVAL_INTEGER,
                     "local expiredKeys = redis.call('zrangebyscore', KEYS[2], 0, ARGV[1], 'limit', 0, ARGV[2]); "

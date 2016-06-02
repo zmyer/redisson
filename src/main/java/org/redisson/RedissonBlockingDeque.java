@@ -24,8 +24,7 @@ import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.core.RBlockingDeque;
-
-import io.netty.util.concurrent.Future;
+import org.redisson.core.RFuture;
 
 /**
  * <p>Distributed and concurrent implementation of {@link java.util.concurrent.BlockingDeque}.
@@ -50,7 +49,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
-    public Future<Boolean> putAsync(V e) {
+    public RFuture<Boolean> putAsync(V e) {
         return offerAsync(e);
     }
 
@@ -69,7 +68,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
-    public Future<V> takeAsync() {
+    public RFuture<V> takeAsync() {
         return blockingQueue.takeAsync();
     }
 
@@ -83,7 +82,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
-    public Future<V> pollAsync(long timeout, TimeUnit unit) {
+    public RFuture<V> pollAsync(long timeout, TimeUnit unit) {
         return blockingQueue.pollAsync(timeout, unit);
     }
 
@@ -110,12 +109,12 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
      * @see org.redisson.core.RBlockingQueueAsync#pollFromAnyAsync(long, java.util.concurrent.TimeUnit, java.lang.String[])
      */
     @Override
-    public Future<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
+    public RFuture<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
         return blockingQueue.pollFromAnyAsync(timeout, unit);
     }
 
     @Override
-    public Future<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit) {
+    public RFuture<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit) {
         return blockingQueue.pollLastAndOfferFirstToAsync(queueName, timeout, unit);
     }
 
@@ -135,7 +134,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
-    public Future<Integer> drainToAsync(Collection<? super V> c) {
+    public RFuture<Integer> drainToAsync(Collection<? super V> c) {
         return blockingQueue.drainToAsync(c);
     }
 
@@ -145,17 +144,17 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
-    public Future<Integer> drainToAsync(Collection<? super V> c, int maxElements) {
+    public RFuture<Integer> drainToAsync(Collection<? super V> c, int maxElements) {
         return blockingQueue.drainToAsync(c, maxElements);
     }
 
     @Override
-    public Future<Void> putFirstAsync(V e) {
+    public RFuture<Void> putFirstAsync(V e) {
         return addFirstAsync(e);
     }
 
     @Override
-    public Future<Void> putLastAsync(V e) {
+    public RFuture<Void> putLastAsync(V e) {
         return addLastAsync(e);
     }
 
@@ -183,50 +182,50 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public V takeFirst() throws InterruptedException {
-        Future<V> res = takeFirstAsync();
-        return res.await().getNow();
+        RFuture<V> res = takeFirstAsync();
+        return sync(res);
     }
 
     @Override
-    public Future<V> takeFirstAsync() {
+    public RFuture<V> takeFirstAsync() {
         return takeAsync();
     }
 
     @Override
-    public Future<V> takeLastAsync() {
+    public RFuture<V> takeLastAsync() {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.BRPOP_VALUE, getName(), 0);
     }
 
     @Override
     public V takeLast() throws InterruptedException {
-        Future<V> res = takeLastAsync();
-        return res.await().getNow();
+        RFuture<V> res = takeLastAsync();
+        return sync(res);
     }
 
     @Override
-    public Future<V> pollFirstAsync(long timeout, TimeUnit unit) {
+    public RFuture<V> pollFirstAsync(long timeout, TimeUnit unit) {
         return pollAsync(timeout, unit);
     }
 
     @Override
     public V pollFirstFromAny(long timeout, TimeUnit unit, String ... queueNames) throws InterruptedException {
-        Future<V> res = pollFirstFromAnyAsync(timeout, unit, queueNames);
-        return res.await().getNow();
+        RFuture<V> res = pollFirstFromAnyAsync(timeout, unit, queueNames);
+        return sync(res);
     }
 
     @Override
-    public Future<V> pollFirstFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
+    public RFuture<V> pollFirstFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
         return pollFromAnyAsync(timeout, unit, queueNames);
     }
 
     @Override
     public V pollLastFromAny(long timeout, TimeUnit unit, String ... queueNames) throws InterruptedException {
-        Future<V> res = pollLastFromAnyAsync(timeout, unit, queueNames);
-        return res.await().getNow();
+        RFuture<V> res = pollLastFromAnyAsync(timeout, unit, queueNames);
+        return sync(res);
     }
 
     @Override
-    public Future<V> pollLastFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
+    public RFuture<V> pollLastFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
         List<Object> params = new ArrayList<Object>(queueNames.length + 1);
         params.add(getName());
         for (Object name : queueNames) {
@@ -238,19 +237,19 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public V pollFirst(long timeout, TimeUnit unit) throws InterruptedException {
-        Future<V> res = pollFirstAsync(timeout, unit);
-        return res.await().getNow();
+        RFuture<V> res = pollFirstAsync(timeout, unit);
+        return sync(res);
     }
 
     @Override
-    public Future<V> pollLastAsync(long timeout, TimeUnit unit) {
+    public RFuture<V> pollLastAsync(long timeout, TimeUnit unit) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.BRPOP_VALUE, getName(), unit.toSeconds(timeout));
     }
 
     @Override
     public V pollLast(long timeout, TimeUnit unit) throws InterruptedException {
-        Future<V> res = pollLastAsync(timeout, unit);
-        return res.await().getNow();
+        RFuture<V> res = pollLastAsync(timeout, unit);
+        return sync(res);
    }
 
 }

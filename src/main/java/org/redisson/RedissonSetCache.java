@@ -34,9 +34,8 @@ import org.redisson.client.protocol.RedisStrictCommand;
 import org.redisson.client.protocol.convertor.BooleanReplayConvertor;
 import org.redisson.client.protocol.decoder.ListScanResult;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RSetCache;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * <p>Set-based cache with ability to set TTL for each entry via
@@ -75,7 +74,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Integer> sizeAsync() {
+    public RFuture<Integer> sizeAsync() {
         return commandExecutor.readAsync(getName(), codec, RedisCommands.ZCARD_INT, getName());
     }
 
@@ -90,7 +89,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> containsAsync(Object o) {
+    public RFuture<Boolean> containsAsync(Object o) {
         return commandExecutor.evalReadAsync(getName(), codec, new RedisStrictCommand<Boolean>("EVAL", new BooleanReplayConvertor(), 5),
                     "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); " + 
                      "if expireDateScore ~= false then " +
@@ -106,11 +105,11 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     ListScanResult<V> scanIterator(InetSocketAddress client, long startPos) {
-        Future<ListScanResult<V>> f = scanIteratorAsync(client, startPos);
+        RFuture<ListScanResult<V>> f = scanIteratorAsync(client, startPos);
         return get(f);
     }
 
-    public Future<ListScanResult<V>> scanIteratorAsync(InetSocketAddress client, long startPos) {
+    public RFuture<ListScanResult<V>> scanIteratorAsync(InetSocketAddress client, long startPos) {
         return commandExecutor.evalReadAsync(client, getName(), codec, RedisCommands.EVAL_ZSCAN,
                   "local result = {}; "
                 + "local res = redis.call('zscan', KEYS[1], ARGV[1]); "
@@ -148,17 +147,17 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Set<V>> readAllAsync() {
-        return (Future<Set<V>>)readAllAsync(RedisCommands.ZRANGEBYSCORE);
+    public RFuture<Set<V>> readAllAsync() {
+        return (RFuture<Set<V>>)readAllAsync(RedisCommands.ZRANGEBYSCORE);
     }
 
-    private Future<?> readAllAsync(RedisCommand<? extends Collection<?>> command) {
+    private RFuture<?> readAllAsync(RedisCommand<? extends Collection<?>> command) {
         return commandExecutor.readAsync(getName(), codec, command, getName(), System.currentTimeMillis(), 92233720368547758L);
     }
 
     
-    private Future<List<Object>> readAllasListAsync() {
-        return (Future<List<Object>>)readAllAsync(RedisCommands.ZRANGEBYSCORE_LIST);
+    private RFuture<List<Object>> readAllasListAsync() {
+        return (RFuture<List<Object>>)readAllAsync(RedisCommands.ZRANGEBYSCORE_LIST);
     }
 
     @Override
@@ -184,7 +183,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> addAsync(V value, long ttl, TimeUnit unit) {
+    public RFuture<Boolean> addAsync(V value, long ttl, TimeUnit unit) {
         if (ttl < 0) {
             throw new IllegalArgumentException("TTL can't be negative");
         }
@@ -218,12 +217,12 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> addAsync(V value) {
+    public RFuture<Boolean> addAsync(V value) {
         return addAsync(value, 92233720368547758L - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
     }
 
     @Override
-    public Future<Boolean> removeAsync(Object o) {
+    public RFuture<Boolean> removeAsync(Object o) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.ZREM, getName(), o);
     }
 
@@ -238,7 +237,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> containsAllAsync(Collection<?> c) {
+    public RFuture<Boolean> containsAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(true);
         }
@@ -268,7 +267,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> addAllAsync(Collection<? extends V> c) {
+    public RFuture<Boolean> addAllAsync(Collection<? extends V> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(false);
         }
@@ -291,7 +290,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> retainAllAsync(Collection<?> c) {
+    public RFuture<Boolean> retainAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return deleteAsync();
         }
@@ -313,7 +312,7 @@ public class RedissonSetCache<V> extends RedissonExpirable implements RSetCache<
     }
 
     @Override
-    public Future<Boolean> removeAllAsync(Collection<?> c) {
+    public RFuture<Boolean> removeAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(false);
         }

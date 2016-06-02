@@ -18,14 +18,14 @@ package org.redisson.pubsub;
 import java.util.concurrent.ConcurrentMap;
 
 import org.redisson.PubSubEntry;
+import org.redisson.RedissonFuture;
 import org.redisson.client.BaseRedisPubSubListener;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.protocol.pubsub.PubSubType;
 import org.redisson.connection.ConnectionManager;
+import org.redisson.core.RFuture;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.PlatformDependent;
 
 abstract class PublishSubscribe<E extends PubSubEntry<E>> {
@@ -48,7 +48,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
         return entries.get(entryName);
     }
 
-    public Future<E> subscribe(String entryName, String channelName, ConnectionManager connectionManager) {
+    public RFuture<E> subscribe(String entryName, String channelName, ConnectionManager connectionManager) {
         synchronized (this) {
             E entry = entries.get(entryName);
             if (entry != null) {
@@ -56,7 +56,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
                 return entry.getPromise();
             }
 
-            Promise<E> newPromise = connectionManager.newPromise();
+            RedissonFuture<E> newPromise = connectionManager.newPromise();
             E value = createEntry(newPromise);
             value.aquire();
 
@@ -72,7 +72,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
         }
     }
 
-    protected abstract E createEntry(Promise<E> newPromise);
+    protected abstract E createEntry(RedissonFuture<E> newPromise);
 
     protected abstract void onMessage(E value, Long message);
 

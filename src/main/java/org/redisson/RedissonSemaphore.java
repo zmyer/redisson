@@ -27,11 +27,10 @@ import org.redisson.client.codec.LongCodec;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RSemaphore;
 import org.redisson.pubsub.SemaphorePubSub;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 
@@ -76,7 +75,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
             return;
         }
 
-        Future<RedissonLockEntry> future = subscribe();
+        RFuture<RedissonLockEntry> future = subscribe();
         get(future);
         try {
             while (true) {
@@ -93,148 +92,126 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
     
     @Override
-    public Future<Void> acquireAsync() {
+    public RFuture<Void> acquireAsync() {
         return acquireAsync(1);
     }
     
     @Override
-    public Future<Void> acquireAsync(final int permits) {
-        final Promise<Void> result = newPromise();
-        Future<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
-        tryAcquireFuture.addListener(new FutureListener<Boolean>() {
-            @Override
-            public void operationComplete(Future<Boolean> future) throws Exception {
-                if (!future.isSuccess()) {
-                    result.setFailure(future.cause());
-                    return;
-                }
-
-                if (future.getNow()) {
-                    result.setSuccess(null);
-                    return;
-                }
-                
-                final Future<RedissonLockEntry> subscribeFuture = subscribe();
-                subscribeFuture.addListener(new FutureListener<RedissonLockEntry>() {
-                    @Override
-                    public void operationComplete(Future<RedissonLockEntry> future) throws Exception {
-                        if (!future.isSuccess()) {
-                            result.setFailure(future.cause());
-                            return;
-                        }
-
-                        acquireAsync(permits, subscribeFuture, result);
-                    }
-
-                });
+    public RFuture<Void> acquireAsync(final int permits) {
+        final RedissonFuture<Void> result = newPromise();
+        RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
+        tryAcquireFuture.thenAccept(res -> {
+            if (res) {
+                result.setSuccess(null);
+                return;
             }
+            
+            final RFuture<RedissonLockEntry> subscribeFuture = subscribe();
+            subscribeFuture.thenAccept(r -> {
+                acquireAsync(permits, subscribeFuture, result);
+            }).exceptionally(cause -> {
+                result.setFailure(cause);
+                return null;
+            });
+        }).exceptionally(cause -> {
+            result.setFailure(cause);
+            return null;
         });
         return result;
     }
     
-    private void tryAcquireAsync(final AtomicLong time, final int permits, final Future<RedissonLockEntry> subscribeFuture, final Promise<Boolean> result) {
-        Future<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
-        tryAcquireFuture.addListener(new FutureListener<Boolean>() {
-            @Override
-            public void operationComplete(Future<Boolean> future) throws Exception {
-                if (!future.isSuccess()) {
-                    unsubscribe(subscribeFuture);
-                    result.tryFailure(future.cause());
-                    return;
-                }
+    private void tryAcquireAsync(final AtomicLong time, final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Boolean> result) {
+        RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
+        tryAcquireFuture.thenAccept(res -> {
+            if (res) {
+                unsubscribe(subscribeFuture);
+                result.trySuccess(true);
+                return;
+            }
+            
+            if (time.get() < 0) {
+                unsubscribe(subscribeFuture);
+                result.trySuccess(false);
+                return;
+            }
 
-                if (future.getNow()) {
-                    unsubscribe(subscribeFuture);
-                    result.trySuccess(true);
-                    return;
-                }
-                
-                if (time.get() < 0) {
-                    unsubscribe(subscribeFuture);
-                    result.trySuccess(false);
-                    return;
-                }
+            // waiting for message
+            final long current = System.currentTimeMillis();
+            final RedissonLockEntry entry = getEntry();
+            synchronized (entry) {
+                if (entry.getLatch().tryAcquire()) {
+                    tryAcquireAsync(time, permits, subscribeFuture, result);
+                } else {
+                    final AtomicBoolean executed = new AtomicBoolean();
+                    final AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+                    final Runnable listener = new Runnable() {
+                        @Override
+                        public void run() {
+                            executed.set(true);
+                            if (futureRef.get() != null) {
+                                futureRef.get().cancel(false);
+                            }
+                            long elapsed = System.currentTimeMillis() - current;
+                            time.addAndGet(-elapsed);
 
-                // waiting for message
-                final long current = System.currentTimeMillis();
-                final RedissonLockEntry entry = getEntry();
-                synchronized (entry) {
-                    if (entry.getLatch().tryAcquire()) {
-                        tryAcquireAsync(time, permits, subscribeFuture, result);
-                    } else {
-                        final AtomicBoolean executed = new AtomicBoolean();
-                        final AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<ScheduledFuture<?>>();
-                        final Runnable listener = new Runnable() {
+                            tryAcquireAsync(time, permits, subscribeFuture, result);
+                        }
+                    };
+                    entry.addListener(listener);
+
+                    long t = time.get();
+                    if (!executed.get()) {
+                        ScheduledFuture<?> scheduledFuture = commandExecutor.getConnectionManager().getGroup().schedule(new Runnable() {
                             @Override
                             public void run() {
-                                executed.set(true);
-                                if (futureRef.get() != null) {
-                                    futureRef.get().cancel(false);
-                                }
-                                long elapsed = System.currentTimeMillis() - current;
-                                time.addAndGet(-elapsed);
+                                synchronized (entry) {
+                                    if (entry.removeListener(listener)) {
+                                        long elapsed = System.currentTimeMillis() - current;
+                                        time.addAndGet(-elapsed);
 
-                                tryAcquireAsync(time, permits, subscribeFuture, result);
-                            }
-                        };
-                        entry.addListener(listener);
-
-                        long t = time.get();
-                        if (!executed.get()) {
-                            ScheduledFuture<?> scheduledFuture = commandExecutor.getConnectionManager().getGroup().schedule(new Runnable() {
-                                @Override
-                                public void run() {
-                                    synchronized (entry) {
-                                        if (entry.removeListener(listener)) {
-                                            long elapsed = System.currentTimeMillis() - current;
-                                            time.addAndGet(-elapsed);
-
-                                            tryAcquireAsync(time, permits, subscribeFuture, result);
-                                        }
+                                        tryAcquireAsync(time, permits, subscribeFuture, result);
                                     }
                                 }
-                            }, t, TimeUnit.MILLISECONDS);
-                            futureRef.set(scheduledFuture);
-                        }
+                            }
+                        }, t, TimeUnit.MILLISECONDS);
+                        futureRef.set(scheduledFuture);
                     }
                 }
             }
+        }).exceptionally(cause -> {
+            unsubscribe(subscribeFuture);
+            result.tryFailure(cause);
+            return null;
         });
-        
     }
     
-    private void acquireAsync(final int permits, final Future<RedissonLockEntry> subscribeFuture, final Promise<Void> result) {
-        Future<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
-        tryAcquireFuture.addListener(new FutureListener<Boolean>() {
-            @Override
-            public void operationComplete(Future<Boolean> future) throws Exception {
-                if (!future.isSuccess()) {
-                    unsubscribe(subscribeFuture);
-                    result.setFailure(future.cause());
-                    return;
-                }
-
-                if (future.getNow()) {
-                    unsubscribe(subscribeFuture);
-                    result.setSuccess(null);
-                    return;
-                }
-                
-                final RedissonLockEntry entry = getEntry();
-                synchronized (entry) {
-                    if (entry.getLatch().tryAcquire(permits)) {
-                        acquireAsync(permits, subscribeFuture, result);
-                    } else {
-                        Runnable listener = new Runnable() {
-                            @Override
-                            public void run() {
-                                acquireAsync(permits, subscribeFuture, result);
-                            }
-                        };
-                        entry.addListener(listener);
-                    }
+    private void acquireAsync(final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Void> result) {
+        RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
+        tryAcquireFuture.thenAccept(r -> {
+            if (r) {
+                unsubscribe(subscribeFuture);
+                result.setSuccess(null);
+                return;
+            }
+            
+            RedissonLockEntry entry = getEntry();
+            synchronized (entry) {
+                if (entry.getLatch().tryAcquire(permits)) {
+                    acquireAsync(permits, subscribeFuture, result);
+                } else {
+                    Runnable listener = new Runnable() {
+                        @Override
+                        public void run() {
+                            acquireAsync(permits, subscribeFuture, result);
+                        }
+                    };
+                    entry.addListener(listener);
                 }
             }
+        }).exceptionally(cause -> {
+            unsubscribe(subscribeFuture);
+            result.setFailure(cause);
+            return null;
         });
     }
 
@@ -249,12 +226,12 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
     
     @Override
-    public Future<Boolean> tryAcquireAsync() {
+    public RFuture<Boolean> tryAcquireAsync() {
         return tryAcquireAsync(1);
     }
     
     @Override
-    public Future<Boolean> tryAcquireAsync(int permits) {
+    public RFuture<Boolean> tryAcquireAsync(int permits) {
         if (permits < 0) {
             throw new IllegalArgumentException("Permits amount can't be negative");
         }
@@ -270,7 +247,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
 
     @Override
-    public Future<Boolean> tryAcquireAsync(long waitTime, TimeUnit unit) {
+    public RFuture<Boolean> tryAcquireAsync(long waitTime, TimeUnit unit) {
         return tryAcquireAsync(1, waitTime, unit);
     }
     
@@ -281,8 +258,8 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
         }
 
         long time = unit.toMillis(waitTime);
-        Future<RedissonLockEntry> future = subscribe();
-        if (!await(future, time, TimeUnit.MILLISECONDS)) {
+        RFuture<RedissonLockEntry> future = subscribe();
+        if (!future.await(time, TimeUnit.MILLISECONDS)) {
             return false;
         }
 
@@ -311,63 +288,53 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
 
     @Override
-    public Future<Boolean> tryAcquireAsync(final int permits, long waitTime, TimeUnit unit) {
-        final Promise<Boolean> result = newPromise();
+    public RFuture<Boolean> tryAcquireAsync(final int permits, long waitTime, TimeUnit unit) {
+        final RedissonFuture<Boolean> result = newPromise();
         final AtomicLong time = new AtomicLong(unit.toMillis(waitTime));
-        Future<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
-        tryAcquireFuture.addListener(new FutureListener<Boolean>() {
-            @Override
-            public void operationComplete(Future<Boolean> future) throws Exception {
-                if (!future.isSuccess()) {
-                    result.setFailure(future.cause());
-                    return;
-                }
-
-                if (future.getNow()) {
-                    result.setSuccess(true);
-                    return;
-                }
-                
-                final long current = System.currentTimeMillis();
-                final AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<ScheduledFuture<?>>();
-                final Future<RedissonLockEntry> subscribeFuture = subscribe();
-                subscribeFuture.addListener(new FutureListener<RedissonLockEntry>() {
-                    @Override
-                    public void operationComplete(Future<RedissonLockEntry> future) throws Exception {
-                        if (!future.isSuccess()) {
-                            result.setFailure(future.cause());
-                            return;
-                        }
-                        
-                        if (futureRef.get() != null) {
-                            futureRef.get().cancel(false);
-                        }
-
-                        long elapsed = System.currentTimeMillis() - current;
-                        time.addAndGet(-elapsed);
-                        
-                        if (time.get() < 0) {
-                            unsubscribe(subscribeFuture);
-                            result.trySuccess(false);
-                            return;
-                        }
-
-                        tryAcquireAsync(time, permits, subscribeFuture, result);
-                    }
-                });
-                
-                if (!subscribeFuture.isDone()) {
-                    ScheduledFuture<?> scheduledFuture = commandExecutor.getConnectionManager().getGroup().schedule(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (!subscribeFuture.isDone()) {
-                                result.trySuccess(false);
-                            }
-                        }
-                    }, time.get(), TimeUnit.MILLISECONDS);
-                    futureRef.set(scheduledFuture);
-                }
+        RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
+        tryAcquireFuture.thenAccept(res -> {
+            if (res) {
+                result.setSuccess(true);
+                return;
             }
+            
+            final long current = System.currentTimeMillis();
+            final AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+            final RFuture<RedissonLockEntry> subscribeFuture = subscribe();
+            subscribeFuture.thenAccept(r -> {
+                if (futureRef.get() != null) {
+                    futureRef.get().cancel(false);
+                }
+
+                long elapsed = System.currentTimeMillis() - current;
+                time.addAndGet(-elapsed);
+                
+                if (time.get() < 0) {
+                    unsubscribe(subscribeFuture);
+                    result.trySuccess(false);
+                    return;
+                }
+
+                tryAcquireAsync(time, permits, subscribeFuture, result);
+            }).exceptionally(cause -> {
+                result.setFailure(cause);
+                return null;
+            });
+            
+            if (!subscribeFuture.isDone()) {
+                ScheduledFuture<?> scheduledFuture = commandExecutor.getConnectionManager().getGroup().schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!subscribeFuture.isDone()) {
+                            result.trySuccess(false);
+                        }
+                    }
+                }, time.get(), TimeUnit.MILLISECONDS);
+                futureRef.set(scheduledFuture);
+            }
+        }).exceptionally(cause -> {
+            result.setFailure(cause);
+            return null;
         });
         
         return result;
@@ -378,11 +345,11 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
         return PUBSUB.getEntry(getEntryName());
     }
 
-    private Future<RedissonLockEntry> subscribe() {
+    private RFuture<RedissonLockEntry> subscribe() {
         return PUBSUB.subscribe(getEntryName(), getChannelName(), commandExecutor.getConnectionManager());
     }
 
-    private void unsubscribe(Future<RedissonLockEntry> future) {
+    private void unsubscribe(RFuture<RedissonLockEntry> future) {
         PUBSUB.unsubscribe(future.getNow(), getEntryName(), getChannelName(), commandExecutor.getConnectionManager());
     }
 
@@ -402,12 +369,12 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
     
     @Override
-    public Future<Void> releaseAsync() {
+    public RFuture<Void> releaseAsync() {
         return releaseAsync(1);
     }
     
     @Override
-    public Future<Void> releaseAsync(int permits) {
+    public RFuture<Void> releaseAsync(int permits) {
         if (permits < 0) {
             throw new IllegalArgumentException("Permits amount can't be negative");
         }
@@ -444,7 +411,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
     }
     
     @Override
-    public Future<Void> setPermitsAsync(int permits) {
+    public RFuture<Void> setPermitsAsync(int permits) {
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_VOID,
                 "local value = redis.call('get', KEYS[1]); " +
                 "if (value == false or value == 0) then "

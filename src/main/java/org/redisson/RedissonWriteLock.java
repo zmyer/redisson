@@ -25,11 +25,9 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.RedisStrictCommand;
 import org.redisson.command.CommandExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RLock;
 import org.redisson.pubsub.LockPubSub;
-
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 
 /**
  * Lock will be removed automatically if client disconnects.
@@ -52,7 +50,7 @@ public class RedissonWriteLock extends RedissonLock implements RLock {
     }
 
     @Override
-    <T> Future<T> tryLockInnerAsync(long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
+    <T> RFuture<T> tryLockInnerAsync(long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
         internalLockLeaseTime = unit.toMillis(leaseTime);
 
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, command,
@@ -117,8 +115,8 @@ public class RedissonWriteLock extends RedissonLock implements RLock {
         throw new UnsupportedOperationException();
     }
 
-    Future<Boolean> forceUnlockAsync() {
-        Future<Boolean> result = commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+    RFuture<Boolean> forceUnlockAsync() {
+        RFuture<Boolean> result = commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
               "if (redis.call('hget', KEYS[1], 'mode') == 'write') then " +
                   "redis.call('del', KEYS[1]); " +
                   "redis.call('publish', KEYS[2], ARGV[1]); " +
@@ -128,12 +126,9 @@ public class RedissonWriteLock extends RedissonLock implements RLock {
               "end;",
               Arrays.<Object>asList(getName(), getChannelName()), LockPubSub.unlockMessage);
 
-        result.addListener(new FutureListener<Boolean>() {
-            @Override
-            public void operationComplete(Future<Boolean> future) throws Exception {
-                if (future.isSuccess() && future.getNow()) {
-                    cancelExpirationRenewal();
-                }
+        result.thenAccept(r -> {
+            if (r) {
+                cancelExpirationRenewal();
             }
         });
 

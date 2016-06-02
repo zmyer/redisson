@@ -37,6 +37,7 @@ import org.redisson.connection.balancer.LoadBalancerManager;
 import org.redisson.connection.balancer.LoadBalancerManagerImpl;
 import org.redisson.connection.pool.MasterConnectionPool;
 import org.redisson.core.NodeType;
+import org.redisson.core.RFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,13 +75,13 @@ public class MasterSlaveEntry {
         writeConnectionHolder = new MasterConnectionPool(config, connectionManager, this);
     }
 
-    public List<Future<Void>> initSlaveBalancer(Collection<URI> disconnectedNodes) {
+    public List<RFuture<Void>> initSlaveBalancer(Collection<URI> disconnectedNodes) {
         boolean freezeMasterAsSlave = !config.getSlaveAddresses().isEmpty()
                     && config.getReadMode() == ReadMode.SLAVE
                         && disconnectedNodes.size() < config.getSlaveAddresses().size();
 
-        List<Future<Void>> result = new LinkedList<Future<Void>>();
-        Future<Void> f = addSlave(config.getMasterAddress().getHost(), config.getMasterAddress().getPort(), freezeMasterAsSlave, NodeType.MASTER);
+        List<RFuture<Void>> result = new LinkedList<RFuture<Void>>();
+        RFuture<Void> f = addSlave(config.getMasterAddress().getHost(), config.getMasterAddress().getPort(), freezeMasterAsSlave, NodeType.MASTER);
         result.add(f);
         for (URI address : config.getSlaveAddresses()) {
             f = addSlave(address.getHost(), address.getPort(), disconnectedNodes.contains(address), NodeType.SLAVE);
@@ -89,7 +90,7 @@ public class MasterSlaveEntry {
         return result;
     }
 
-    public Future<Void> setupMasterEntry(String host, int port) {
+    public RFuture<Void> setupMasterEntry(String host, int port) {
         RedisClient client = connectionManager.createClient(NodeType.MASTER, host, port);
         masterEntry = new ClientConnectionsEntry(client, config.getMasterConnectionMinimumIdleSize(), config.getMasterConnectionPoolSize(),
                                                     0, 0, connectionManager, NodeType.MASTER);
@@ -179,25 +180,18 @@ public class MasterSlaveEntry {
         }
     }
 
-    private void reattachPubSubListeners(final String channelName, final Collection<RedisPubSubListener> listeners) {
+    private void reattachPubSubListeners(String channelName, Collection<RedisPubSubListener> listeners) {
         Codec subscribeCodec = connectionManager.unsubscribe(channelName);
         if (!listeners.isEmpty()) {
-            Future<PubSubConnectionEntry> future = connectionManager.subscribe(subscribeCodec, channelName, null);
-            future.addListener(new FutureListener<PubSubConnectionEntry>() {
-
-                @Override
-                public void operationComplete(Future<PubSubConnectionEntry> future)
-                        throws Exception {
-                    if (!future.isSuccess()) {
-                        log.error("Can't resubscribe topic channel: " + channelName);
-                        return;
-                    }
-                    PubSubConnectionEntry newEntry = future.getNow();
-                    for (RedisPubSubListener redisPubSubListener : listeners) {
-                        newEntry.addListener(channelName, redisPubSubListener);
-                    }
-                    log.debug("resubscribed listeners for '{}' channel", channelName);
+            RFuture<PubSubConnectionEntry> future = connectionManager.subscribe(subscribeCodec, channelName, null);
+            future.thenAccept(newEntry -> {
+                for (RedisPubSubListener redisPubSubListener : listeners) {
+                    newEntry.addListener(channelName, redisPubSubListener);
                 }
+                log.debug("listeners resubscribed to '{}' channel", channelName);
+            }).exceptionally(cause -> {
+                log.error("Can't resubscribe listeners to topic channel: " + channelName, cause);
+                return null;
             });
         }
     }
@@ -206,22 +200,15 @@ public class MasterSlaveEntry {
             final Collection<RedisPubSubListener> listeners) {
         Codec subscribeCodec = connectionManager.punsubscribe(channelName);
         if (!listeners.isEmpty()) {
-            Future<PubSubConnectionEntry> future = connectionManager.psubscribe(channelName, subscribeCodec);
-            future.addListener(new FutureListener<PubSubConnectionEntry>() {
-                @Override
-                public void operationComplete(Future<PubSubConnectionEntry> future)
-                        throws Exception {
-                    if (!future.isSuccess()) {
-                        log.error("Can't resubscribe topic channel: " + channelName);
-                        return;
-                    }
-
-                    PubSubConnectionEntry newEntry = future.getNow();
-                    for (RedisPubSubListener redisPubSubListener : listeners) {
-                        newEntry.addListener(channelName, redisPubSubListener);
-                    }
-                    log.debug("resubscribed listeners for '{}' channel-pattern", channelName);
+            RFuture<PubSubConnectionEntry> future = connectionManager.psubscribe(channelName, subscribeCodec);
+            future.thenAccept(newEntry -> {
+                for (RedisPubSubListener redisPubSubListener : listeners) {
+                    newEntry.addListener(channelName, redisPubSubListener);
                 }
+                log.debug("listeners resubscribed to '{}' channel-pattern", channelName);
+            }).exceptionally(cause -> {
+                log.error("Can't resubscribe listeners to '" + channelName + "' channel-pattern", cause);
+                return null;
             });
         }
     }
@@ -234,48 +221,41 @@ public class MasterSlaveEntry {
             return;
         }
 
-        Future<RedisConnection> newConnection = connectionReadOp();
-        newConnection.addListener(new FutureListener<RedisConnection>() {
-            @Override
-            public void operationComplete(Future<RedisConnection> future) throws Exception {
-                if (!future.isSuccess()) {
-                    log.error("Can't resubscribe blocking queue {}", commandData);
-                    return;
+        RFuture<RedisConnection> future = connectionReadOp();
+        future.thenAccept(newConnection -> {
+            FutureListener<Object> listener = new FutureListener<Object>() {
+                @Override
+                public void operationComplete(Future<Object> future) throws Exception {
+                    releaseRead(newConnection);
                 }
-
-                final RedisConnection newConnection = future.getNow();
-                    
-                final FutureListener<Object> listener = new FutureListener<Object>() {
-                    @Override
-                    public void operationComplete(Future<Object> future) throws Exception {
-                        releaseRead(newConnection);
-                    }
-                };
-                commandData.getPromise().addListener(listener);
-                if (commandData.getPromise().isDone()) {
-                    return;
-                }
-                ChannelFuture channelFuture = newConnection.send(commandData);
-                channelFuture.addListener(new ChannelFutureListener() {
-                    @Override
-                    public void operationComplete(ChannelFuture future) throws Exception {
-                        if (!future.isSuccess()) {
-                            listener.operationComplete(null);
-                            commandData.getPromise().removeListener(listener);
-                            releaseRead(newConnection);
-                            log.error("Can't resubscribe blocking queue {}", commandData);
-                        }
-                    }
-                });
+            };
+            commandData.getPromise().addListener(listener);
+            if (commandData.getPromise().isDone()) {
+                return;
             }
+            ChannelFuture channelFuture = newConnection.send(commandData);
+            channelFuture.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    if (!future.isSuccess()) {
+                        listener.operationComplete(null);
+                        commandData.getPromise().removeListener(listener);
+                        releaseRead(newConnection);
+                        log.error("Can't resubscribe blocking queue {}", commandData);
+                    }
+                }
+            });
+        }).exceptionally(cause -> {
+            log.error("Can't listeners resubscribe to blocking queue " + commandData, cause);
+            return null;
         });
     }
 
-    public Future<Void> addSlave(String host, int port) {
+    public RFuture<Void> addSlave(String host, int port) {
         return addSlave(host, port, true, NodeType.SLAVE);
     }
 
-    private Future<Void> addSlave(String host, int port, boolean freezed, NodeType mode) {
+    private RFuture<Void> addSlave(String host, int port, boolean freezed, NodeType mode) {
         RedisClient client = connectionManager.createClient(NodeType.SLAVE, host, port);
         ClientConnectionsEntry entry = new ClientConnectionsEntry(client,
                 this.config.getSlaveConnectionMinimumIdleSize(),
@@ -355,20 +335,20 @@ public class MasterSlaveEntry {
         slaveBalancer.shutdownAsync();
     }
 
-    public Future<RedisConnection> connectionWriteOp() {
+    public RFuture<RedisConnection> connectionWriteOp() {
         return writeConnectionHolder.get();
     }
 
-    public Future<RedisConnection> connectionReadOp() {
+    public RFuture<RedisConnection> connectionReadOp() {
         return slaveBalancer.nextConnection();
     }
 
-    public Future<RedisConnection> connectionReadOp(InetSocketAddress addr) {
+    public RFuture<RedisConnection> connectionReadOp(InetSocketAddress addr) {
         return slaveBalancer.getConnection(addr);
     }
 
 
-    Future<RedisPubSubConnection> nextPubSubConnection() {
+    RFuture<RedisPubSubConnection> nextPubSubConnection() {
         return slaveBalancer.nextPubSubConnection();
     }
 

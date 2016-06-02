@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 
 import org.redisson.client.RedisException;
 import org.redisson.client.codec.StringCodec;
@@ -34,11 +35,10 @@ import org.redisson.client.protocol.decoder.ListScanResult;
 import org.redisson.cluster.ClusterSlotRange;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.command.CommandBatchService;
+import org.redisson.core.RFuture;
 import org.redisson.core.RKeys;
 import org.redisson.misc.CompositeIterable;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 
 public class RedissonKeys implements RKeys {
@@ -56,7 +56,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Integer> getSlotAsync(String key) {
+    public RFuture<Integer> getSlotAsync(String key) {
         return commandExecutor.readAsync(null, RedisCommands.KEYSLOT, key);
     }
 
@@ -82,10 +82,10 @@ public class RedissonKeys implements RKeys {
 
     private ListScanResult<String> scanIterator(int slot, long startPos, String pattern) {
         if (pattern == null) {
-            Future<ListScanResult<String>> f = commandExecutor.writeAsync(slot, StringCodec.INSTANCE, RedisCommands.SCAN, startPos);
+            RFuture<ListScanResult<String>> f = commandExecutor.writeAsync(slot, StringCodec.INSTANCE, RedisCommands.SCAN, startPos);
             return commandExecutor.get(f);
         }
-        Future<ListScanResult<String>> f = commandExecutor.writeAsync(slot, StringCodec.INSTANCE, RedisCommands.SCAN, startPos, "MATCH", pattern);
+        RFuture<ListScanResult<String>> f = commandExecutor.writeAsync(slot, StringCodec.INSTANCE, RedisCommands.SCAN, startPos, "MATCH", pattern);
         return commandExecutor.get(f);
     }
 
@@ -111,7 +111,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<String> randomKeyAsync() {
+    public RFuture<String> randomKeyAsync() {
         return commandExecutor.readRandomAsync(RedisCommands.RANDOM_KEY);
     }
 
@@ -121,7 +121,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Collection<String>> findKeysByPatternAsync(String pattern) {
+    public RFuture<Collection<String>> findKeysByPatternAsync(String pattern) {
         return commandExecutor.readAllAsync(RedisCommands.KEYS, pattern);
     }
 
@@ -131,7 +131,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Long> deleteByPatternAsync(String pattern) {
+    public RFuture<Long> deleteByPatternAsync(String pattern) {
         if (!commandExecutor.getConnectionManager().isClusterMode()) {
             return commandExecutor.evalWriteAsync((String)null, null, RedisCommands.EVAL_LONG, "local keys = redis.call('keys', ARGV[1]) "
                               + "local n = 0 "
@@ -141,43 +141,36 @@ public class RedissonKeys implements RKeys {
                           + "return n;",Collections.emptyList(), pattern);
         }
 
-        final Promise<Long> result = commandExecutor.getConnectionManager().newPromise();
+        final RedissonFuture<Long> result = commandExecutor.getConnectionManager().newPromise();
         final AtomicReference<Throwable> failed = new AtomicReference<Throwable>();
         final AtomicLong count = new AtomicLong();
         final AtomicLong executed = new AtomicLong(commandExecutor.getConnectionManager().getEntries().size());
-        final FutureListener<Long> listener = new FutureListener<Long>() {
-            @Override
-            public void operationComplete(Future<Long> future) throws Exception {
-                if (future.isSuccess()) {
-                    count.addAndGet(future.getNow());
-                } else {
-                    failed.set(future.cause());
-                }
 
-                checkExecution(result, failed, count, executed);
+        BiFunction<Long, Throwable, Long> listener = (res, cause) -> {
+            if (cause != null) {
+                failed.set(cause);
+            } else {
+                count.addAndGet(res);
             }
+            
+            checkExecution(result, failed, count, executed);
+            return null;
         };
 
         for (ClusterSlotRange slot : commandExecutor.getConnectionManager().getEntries().keySet()) {
-            Future<Collection<String>> findFuture = commandExecutor.readAsync(slot.getStartSlot(), null, RedisCommands.KEYS, pattern);
-            findFuture.addListener(new FutureListener<Collection<String>>() {
-                @Override
-                public void operationComplete(Future<Collection<String>> future) throws Exception {
-                    if (!future.isSuccess()) {
-                        failed.set(future.cause());
-                        checkExecution(result, failed, count, executed);
-                        return;
-                    }
-
-                    Collection<String> keys = future.getNow();
-                    if (keys.isEmpty()) {
-                        checkExecution(result, failed, count, executed);
-                        return;
-                    }
-
-                    Future<Long> deleteFuture = deleteAsync(keys.toArray(new String[keys.size()]));
-                    deleteFuture.addListener(listener);
+            RFuture<Collection<String>> findFuture = commandExecutor.readAsync(slot.getStartSlot(), null, RedisCommands.KEYS, pattern);
+            findFuture.thenAccept(keys -> {
+                if (keys.isEmpty()) {
+                    checkExecution(result, failed, count, executed);
+                    return;
                 }
+
+                RFuture<Long> deleteFuture = deleteAsync(keys.toArray(new String[keys.size()]));
+                deleteFuture.handle(listener);
+            }).exceptionally(cause -> {
+                failed.set(cause);
+                checkExecution(result, failed, count, executed);
+                return null;
             });
         }
 
@@ -190,7 +183,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Long> deleteAsync(String ... keys) {
+    public RFuture<Long> deleteAsync(String ... keys) {
         if (!commandExecutor.getConnectionManager().isClusterMode()) {
             return commandExecutor.writeAsync(null, RedisCommands.DEL, keys);
         }
@@ -210,24 +203,22 @@ public class RedissonKeys implements RKeys {
             }
         }
 
-        final Promise<Long> result = commandExecutor.getConnectionManager().newPromise();
+        final RedissonFuture<Long> result = commandExecutor.getConnectionManager().newPromise();
         final AtomicReference<Throwable> failed = new AtomicReference<Throwable>();
         final AtomicLong count = new AtomicLong();
         final AtomicLong executed = new AtomicLong(range2key.size());
-        FutureListener<List<?>> listener = new FutureListener<List<?>>() {
-            @Override
-            public void operationComplete(Future<List<?>> future) throws Exception {
-                if (future.isSuccess()) {
-                    List<Long> result = (List<Long>) future.get();
-                    for (Long res : result) {
-                        count.addAndGet(res);
-                    }
-                } else {
-                    failed.set(future.cause());
+        
+        BiFunction<List<?>, Throwable, List<?>> listener = (r, cause) -> {
+            if (cause == null) {
+                for (Long res : (List<Long>)r) {
+                    count.addAndGet(res);
                 }
-
-                checkExecution(result, failed, count, executed);
+            } else {
+                failed.set(cause);
             }
+
+            checkExecution(result, failed, count, executed);
+            return null;
         };
 
         for (Entry<ClusterSlotRange, List<String>> entry : range2key.entrySet()) {
@@ -237,8 +228,8 @@ public class RedissonKeys implements RKeys {
                 executorService.writeAsync(entry.getKey().getStartSlot(), null, RedisCommands.DEL, key);
             }
 
-            Future<List<?>> future = executorService.executeAsync();
-            future.addListener(listener);
+            RFuture<List<?>> future = executorService.executeAsync();
+            future.handle(listener);
         }
 
         return result;
@@ -250,7 +241,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Long> countAsync() {
+    public RFuture<Long> countAsync() {
         return commandExecutor.readAllAsync(RedisCommands.DBSIZE, new SlotCallback<Long, Long>() {
             AtomicLong results = new AtomicLong();
             @Override
@@ -271,7 +262,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Void> flushdbAsync() {
+    public RFuture<Void> flushdbAsync() {
         return commandExecutor.writeAllAsync(RedisCommands.FLUSHDB);
     }
 
@@ -281,7 +272,7 @@ public class RedissonKeys implements RKeys {
     }
 
     @Override
-    public Future<Void> flushallAsync() {
+    public RFuture<Void> flushallAsync() {
         return commandExecutor.writeAllAsync(RedisCommands.FLUSHALL);
     }
 

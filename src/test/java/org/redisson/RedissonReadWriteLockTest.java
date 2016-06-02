@@ -1,8 +1,9 @@
 package org.redisson;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.security.SecureRandom;
 import java.util.Random;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -11,7 +12,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.redisson.core.RLock;
 import org.redisson.core.RReadWriteLock;
-import static org.assertj.core.api.Assertions.*;
 
 public class RedissonReadWriteLockTest extends BaseConcurrentTest {
 

@@ -15,14 +15,12 @@
  */
 package org.redisson;
 
-import java.util.concurrent.TimeUnit;
-
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RObject;
 
-import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 
 /**
@@ -47,19 +45,15 @@ abstract class RedissonObject implements RObject {
         this(commandExecutor.getConnectionManager().getCodec(), commandExecutor, name);
     }
 
-    protected boolean await(Future<?> future, long timeout, TimeUnit timeoutUnit) throws InterruptedException {
-        return commandExecutor.await(future, timeout, timeoutUnit);
-    }
-    
-    protected <V> V get(Future<V> future) {
-        return commandExecutor.get(future);
+    protected <V> V get(RFuture<V> RFuture) {
+        return commandExecutor.get(RFuture);
     }
 
-    protected <V> Promise<V> newPromise() {
+    protected <V> RedissonFuture<V> newPromise() {
         return commandExecutor.getConnectionManager().newPromise();
     }
 
-    protected <V> Future<V> newSucceededFuture(V result) {
+    protected <V> RFuture<V> newSucceededFuture(V result) {
         return commandExecutor.getConnectionManager().newSucceededFuture(result);
     }
 
@@ -74,7 +68,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Void> renameAsync(String newName) {
+    public RFuture<Void> renameAsync(String newName) {
         return commandExecutor.writeAsync(getName(), RedisCommands.RENAME, getName(), newName);
     }
 
@@ -84,7 +78,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Void> migrateAsync(String host, int port, int database) {
+    public RFuture<Void> migrateAsync(String host, int port, int database) {
         return commandExecutor.writeAsync(getName(), RedisCommands.MIGRATE, host, port, getName(), database);
     }
 
@@ -94,7 +88,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Boolean> moveAsync(int database) {
+    public RFuture<Boolean> moveAsync(int database) {
         return commandExecutor.writeAsync(getName(), RedisCommands.MOVE, getName(), database);
     }
 
@@ -104,7 +98,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Boolean> renamenxAsync(String newName) {
+    public RFuture<Boolean> renamenxAsync(String newName) {
         return commandExecutor.writeAsync(getName(), RedisCommands.RENAMENX, getName(), newName);
     }
 
@@ -114,7 +108,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Boolean> deleteAsync() {
+    public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_BOOL, getName());
     }
 
@@ -124,7 +118,7 @@ abstract class RedissonObject implements RObject {
     }
 
     @Override
-    public Future<Boolean> isExistsAsync() {
+    public RFuture<Boolean> isExistsAsync() {
         return commandExecutor.readAsync(getName(), codec, RedisCommands.EXISTS, getName());
     }
 

@@ -18,15 +18,13 @@ package org.redisson.command;
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.redisson.SlotCallback;
 import org.redisson.client.RedisException;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.connection.ConnectionManager;
-
-import io.netty.util.concurrent.Future;
+import org.redisson.core.RFuture;
 
 /**
  *
@@ -37,47 +35,45 @@ public interface CommandAsyncExecutor {
 
     ConnectionManager getConnectionManager();
 
-    <V> RedisException convertException(Future<V> future);
+    <V> RedisException convertException(RFuture<V> RFuture);
 
-    boolean await(Future<?> future, long timeout, TimeUnit timeoutUnit) throws InterruptedException;
-    
-    <V> V get(Future<V> future);
+    <V> V get(RFuture<V> RFuture);
 
-    <T, R> Future<R> writeAsync(Integer slot, Codec codec, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> writeAsync(Integer slot, Codec codec, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> readAsync(InetSocketAddress client, String key, Codec codec, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> readAsync(InetSocketAddress client, String key, Codec codec, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> evalWriteAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalWriteAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, String script, List<Object> keys, Object ... params);
 
-    <R, T> Future<R> writeAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, Object ... params);
+    <R, T> RFuture<R> writeAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, Object ... params);
 
-    <R, T> Future<R> readAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, Object ... params);
+    <R, T> RFuture<R> readAllAsync(RedisCommand<T> command, SlotCallback<T, R> callback, Object ... params);
 
-    <T, R> Future<R> evalReadAsync(InetSocketAddress client, String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalReadAsync(InetSocketAddress client, String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
 
-    <T, R> Future<R> evalReadAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalReadAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
 
-    <T, R> Future<R> evalReadAsync(Integer slot, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalReadAsync(Integer slot, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
 
-    <T, R> Future<R> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
 
-    <T, R> Future<R> evalWriteAsync(Integer slot, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
+    <T, R> RFuture<R> evalWriteAsync(Integer slot, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object ... params);
 
-    <T, R> Future<R> readAsync(String key, Codec codec, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> readAsync(String key, Codec codec, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> writeAsync(String key, Codec codec, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> writeAsync(String key, Codec codec, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<Collection<R>> readAllAsync(RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<Collection<R>> readAllAsync(RedisCommand<T> command, Object ... params);
 
-    <T> Future<Void> writeAllAsync(RedisCommand<T> command, Object ... params);
+    <T> RFuture<Void> writeAllAsync(RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> writeAsync(String key, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> writeAsync(String key, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> readAsync(String key, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> readAsync(String key, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> readAsync(Integer slot, Codec codec, RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> readAsync(Integer slot, Codec codec, RedisCommand<T> command, Object ... params);
 
-    <T, R> Future<R> readRandomAsync(RedisCommand<T> command, Object ... params);
+    <T, R> RFuture<R> readRandomAsync(RedisCommand<T> command, Object ... params);
 
 
 }

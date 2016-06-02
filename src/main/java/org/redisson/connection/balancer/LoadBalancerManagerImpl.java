@@ -28,11 +28,10 @@ import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.MasterSlaveEntry;
 import org.redisson.connection.pool.PubSubConnectionPool;
 import org.redisson.connection.pool.SlaveConnectionPool;
+import org.redisson.core.RFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.internal.PlatformDependent;
 
 public class LoadBalancerManagerImpl implements LoadBalancerManager {
@@ -50,14 +49,12 @@ public class LoadBalancerManagerImpl implements LoadBalancerManager {
         pubSubEntries = new PubSubConnectionPool(config, connectionManager, entry);
     }
 
-    public Future<Void> add(final ClientConnectionsEntry entry) {
-        Future<Void> f = entries.add(entry);
-        f.addListener(new FutureListener<Void>() {
-            @Override
-            public void operationComplete(Future<Void> future) throws Exception {
-                addr2Entry.put(entry.getClient().getAddr(), entry);
-                pubSubEntries.add(entry);
-            }
+    public RFuture<Void> add(ClientConnectionsEntry entry) {
+        RFuture<Void> f = entries.add(entry);
+        f.handle((r, ex) -> {
+            addr2Entry.put(entry.getClient().getAddr(), entry);
+            pubSubEntries.add(entry);
+            return null;
         });
         return f;
     }
@@ -122,11 +119,11 @@ public class LoadBalancerManagerImpl implements LoadBalancerManager {
         return connectionEntry;
     }
 
-    public Future<RedisPubSubConnection> nextPubSubConnection() {
+    public RFuture<RedisPubSubConnection> nextPubSubConnection() {
         return pubSubEntries.get();
     }
 
-    public Future<RedisConnection> getConnection(InetSocketAddress addr) {
+    public RFuture<RedisConnection> getConnection(InetSocketAddress addr) {
         ClientConnectionsEntry entry = addr2Entry.get(addr);
         if (entry != null) {
             return entries.get(entry);
@@ -135,7 +132,7 @@ public class LoadBalancerManagerImpl implements LoadBalancerManager {
         return connectionManager.newFailedFuture(exception);
     }
 
-    public Future<RedisConnection> nextConnection() {
+    public RFuture<RedisConnection> nextConnection() {
         return entries.get();
     }
 

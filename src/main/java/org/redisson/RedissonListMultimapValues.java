@@ -41,9 +41,8 @@ import org.redisson.client.protocol.convertor.Convertor;
 import org.redisson.client.protocol.convertor.IntegerReplayConvertor;
 import org.redisson.client.protocol.decoder.ObjectSetReplayDecoder;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RList;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * List based Multimap Cache values holder
@@ -78,7 +77,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         return get(sizeAsync());
     }
 
-    public Future<Integer> sizeAsync() {
+    public RFuture<Integer> sizeAsync() {
         return commandExecutor.evalReadAsync(getName(), codec, EVAL_SIZE,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
@@ -119,7 +118,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<List<V>> readAllAsync() {
+    public RFuture<List<V>> readAllAsync() {
         return commandExecutor.evalReadAsync(getName(), codec, EVAL_READALL,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
@@ -145,7 +144,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> addAsync(V e) {
+    public RFuture<Boolean> addAsync(V e) {
         return commandExecutor.writeAsync(getName(), codec, RPUSH_BOOLEAN, getName(), e);
     }
 
@@ -155,11 +154,11 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> removeAsync(Object o) {
+    public RFuture<Boolean> removeAsync(Object o) {
         return removeAsync(o, 1);
     }
 
-    protected Future<Boolean> removeAsync(Object o, int count) {
+    protected RFuture<Boolean> removeAsync(Object o, int count) {
         return commandExecutor.evalWriteAsync(getName(), codec, EVAL_CONTAINS_VALUE,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[3]); "
@@ -178,7 +177,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> containsAllAsync(Collection<?> c) {
+    public RFuture<Boolean> containsAllAsync(Collection<?> c) {
         List<Object> args = new ArrayList<Object>(c.size() + 2);
         try {
             byte[] keyState = codec.getMapKeyEncoder().encode(key);
@@ -221,7 +220,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> addAllAsync(final Collection<? extends V> c) {
+    public RFuture<Boolean> addAllAsync(final Collection<? extends V> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(false);
         }
@@ -232,7 +231,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         return commandExecutor.writeAsync(getName(), codec, RPUSH_BOOLEAN, args.toArray());
     }
 
-    public Future<Boolean> addAllAsync(int index, Collection<? extends V> coll) {
+    public RFuture<Boolean> addAllAsync(int index, Collection<? extends V> coll) {
         if (index < 0) {
             throw new IndexOutOfBoundsException("index: " + index);
         }
@@ -276,7 +275,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> removeAllAsync(Collection<?> c) {
+    public RFuture<Boolean> removeAllAsync(Collection<?> c) {
         List<Object> args = new ArrayList<Object>(c.size() + 2);
         try {
             byte[] keyState = codec.getMapKeyEncoder().encode(key);
@@ -317,7 +316,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> retainAllAsync(Collection<?> c) {
+    public RFuture<Boolean> retainAllAsync(Collection<?> c) {
         List<Object> args = new ArrayList<Object>(c.size() + 2);
         try {
             byte[] keyState = codec.getMapKeyEncoder().encode(key);
@@ -367,7 +366,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<V> getAsync(int index) {
+    public RFuture<V> getAsync(int index) {
         return commandExecutor.evalReadAsync(getName(), codec, EVAL_GET,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[3]); "
@@ -408,7 +407,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<V> setAsync(int index, V element) {
+    public RFuture<V> setAsync(int index, V element) {
         return commandExecutor.evalWriteAsync(getName(), codec, new RedisCommand<Object>("EVAL", 5),
                 "local v = redis.call('lindex', KEYS[1], ARGV[1]); " +
                         "redis.call('lset', KEYS[1], ARGV[1], ARGV[2]); " +
@@ -422,7 +421,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Void> fastSetAsync(int index, V element) {
+    public RFuture<Void> fastSetAsync(int index, V element) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.LSET, getName(), index, element);
     }
 
@@ -436,11 +435,11 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         checkIndex(index);
 
         if (index == 0) {
-            Future<V> f = commandExecutor.writeAsync(getName(), codec, LPOP, getName());
+            RFuture<V> f = commandExecutor.writeAsync(getName(), codec, LPOP, getName());
             return get(f);
         }
 
-        Future<V> f = commandExecutor.evalWriteAsync(getName(), codec, EVAL_OBJECT,
+        RFuture<V> f = commandExecutor.evalWriteAsync(getName(), codec, EVAL_OBJECT,
                 "local v = redis.call('lindex', KEYS[1], ARGV[1]); " +
                         "local tail = redis.call('lrange', KEYS[1], ARGV[1] + 1, -1);" +
                         "redis.call('ltrim', KEYS[1], 0, ARGV[1] - 1);" +
@@ -460,11 +459,11 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Boolean> containsAsync(Object o) {
+    public RFuture<Boolean> containsAsync(Object o) {
         return indexOfAsync(o, new BooleanNumberReplayConvertor(-1L));
     }
 
-    private <R> Future<R> indexOfAsync(Object o, Convertor<R> convertor) {
+    private <R> RFuture<R> indexOfAsync(Object o, Convertor<R> convertor) {
         return commandExecutor.evalReadAsync(getName(), codec, new RedisCommand<R>("EVAL", convertor, 6, Arrays.asList(ValueType.MAP_KEY, ValueType.MAP_VALUE)),
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
@@ -486,7 +485,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Integer> indexOfAsync(Object o) {
+    public RFuture<Integer> indexOfAsync(Object o) {
         return indexOfAsync(o, new IntegerReplayConvertor());
     }
 
@@ -496,7 +495,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Integer> lastIndexOfAsync(Object o) {
+    public RFuture<Integer> lastIndexOfAsync(Object o) {
         return commandExecutor.evalReadAsync(getName(), codec, LAST_INDEX,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
@@ -523,7 +522,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Void> trimAsync(int fromIndex, int toIndex) {
+    public RFuture<Void> trimAsync(int fromIndex, int toIndex) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.LTRIM, getName(), fromIndex, toIndex);
     }
 
@@ -686,12 +685,12 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     @Override
-    public Future<Integer> addAfterAsync(V elementToFind, V element) {
+    public RFuture<Integer> addAfterAsync(V elementToFind, V element) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.LINSERT, getName(), "AFTER", elementToFind, element);
     }
 
     @Override
-    public Future<Integer> addBeforeAsync(V elementToFind, V element) {
+    public RFuture<Integer> addBeforeAsync(V elementToFind, V element) {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.LINSERT, getName(), "BEFORE", elementToFind, element);
     }
 

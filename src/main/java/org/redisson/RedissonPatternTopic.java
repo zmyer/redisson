@@ -24,9 +24,8 @@ import org.redisson.command.CommandExecutor;
 import org.redisson.connection.PubSubConnectionEntry;
 import org.redisson.core.PatternMessageListener;
 import org.redisson.core.PatternStatusListener;
+import org.redisson.core.RFuture;
 import org.redisson.core.RPatternTopic;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
@@ -63,9 +62,8 @@ public class RedissonPatternTopic<M> implements RPatternTopic<M> {
     }
 
     private int addListener(RedisPubSubListener<M> pubSubListener) {
-        Future<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().psubscribe(name, codec);
-        future.syncUninterruptibly();
-        PubSubConnectionEntry entry = future.getNow();
+        RFuture<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().psubscribe(name, codec);
+        PubSubConnectionEntry entry = commandExecutor.get(future);
         synchronized (entry) {
             if (entry.isActive()) {
                 entry.addListener(name, pubSubListener);

@@ -23,9 +23,8 @@ import org.redisson.client.codec.LongCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.core.RCountDownLatch;
+import org.redisson.core.RFuture;
 import org.redisson.pubsub.CountDownLatchPubSub;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * Distributed alternative to the {@link java.util.concurrent.CountDownLatch}
@@ -51,7 +50,7 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
     }
 
     public void await() throws InterruptedException {
-        Future<RedissonCountDownLatchEntry> promise = subscribe();
+        RFuture<RedissonCountDownLatchEntry> promise = subscribe();
         try {
             get(promise);
 
@@ -69,9 +68,9 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
 
     @Override
     public boolean await(long time, TimeUnit unit) throws InterruptedException {
-        Future<RedissonCountDownLatchEntry> promise = subscribe();
+        RFuture<RedissonCountDownLatchEntry> promise = subscribe();
         try {
-            if (!await(promise, time, unit)) {
+            if (!promise.await(time, unit)) {
                 return false;
             }
 
@@ -101,11 +100,11 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
         return PUBSUB.getEntry(getEntryName());
     }
 
-    private Future<RedissonCountDownLatchEntry> subscribe() {
+    private RFuture<RedissonCountDownLatchEntry> subscribe() {
         return PUBSUB.subscribe(getEntryName(), getChannelName(), commandExecutor.getConnectionManager());
     }
 
-    private void unsubscribe(Future<RedissonCountDownLatchEntry> future) {
+    private void unsubscribe(RFuture<RedissonCountDownLatchEntry> future) {
         PUBSUB.unsubscribe(future.getNow(), getEntryName(), getChannelName(), commandExecutor.getConnectionManager());
     }
 
@@ -115,7 +114,7 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
     }
 
     @Override
-    public Future<Void> countDownAsync() {
+    public RFuture<Void> countDownAsync() {
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                         "local v = redis.call('decr', KEYS[1]);" +
                         "if v <= 0 then redis.call('del', KEYS[1]) end;" +
@@ -137,7 +136,7 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
     }
 
     @Override
-    public Future<Long> getCountAsync() {
+    public RFuture<Long> getCountAsync() {
         return commandExecutor.readAsync(getName(), LongCodec.INSTANCE, RedisCommands.GET_LONG, getName());
     }
 
@@ -147,7 +146,7 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
     }
 
     @Override
-    public Future<Boolean> trySetCountAsync(long count) {
+    public RFuture<Boolean> trySetCountAsync(long count) {
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                 "if redis.call('exists', KEYS[1]) == 0 then "
                     + "redis.call('set', KEYS[1], ARGV[2]); "
@@ -160,7 +159,7 @@ public class RedissonCountDownLatch extends RedissonObject implements RCountDown
     }
 
     @Override
-    public Future<Boolean> deleteAsync() {
+    public RFuture<Boolean> deleteAsync() {
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                 "if redis.call('del', KEYS[1]) == 1 then "
                     + "redis.call('publish', KEYS[2], ARGV[1]); "

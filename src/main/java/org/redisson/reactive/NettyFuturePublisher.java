@@ -15,10 +15,11 @@
  */
 package org.redisson.reactive;
 
-import org.reactivestreams.Subscriber;
+import java.util.concurrent.CompletionException;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
+import org.reactivestreams.Subscriber;
+import org.redisson.core.RFuture;
+
 import reactor.core.support.Exceptions;
 import reactor.rx.Stream;
 import reactor.rx.action.Action;
@@ -26,9 +27,9 @@ import reactor.rx.subscription.ReactiveSubscription;
 
 public class NettyFuturePublisher<T> extends Stream<T> {
 
-    private final Future<? extends T> that;
+    private final RFuture<? extends T> that;
 
-    public NettyFuturePublisher(Future<? extends T> that) {
+    public NettyFuturePublisher(RFuture<? extends T> that) {
         this.that = that;
     }
 
@@ -42,19 +43,17 @@ public class NettyFuturePublisher<T> extends Stream<T> {
                     Action.checkRequest(elements);
                     if (isComplete()) return;
 
-                    that.addListener(new FutureListener<T>() {
-                        @Override
-                        public void operationComplete(Future<T> future) throws Exception {
-                            if (!future.isSuccess()) {
-                                subscriber.onError(future.cause());
-                                return;
-                            }
-
-                            if (future.getNow() != null) {
-                                subscriber.onNext(future.getNow());
-                            }
-                            onComplete();
+                    that.thenAccept(r -> {
+                        if (r != null) {
+                            subscriber.onNext(r);
                         }
+                        onComplete();
+                    }).exceptionally(cause -> {
+                        if (cause instanceof CompletionException) {
+                            cause = ((CompletionException)cause).getCause();
+                        }
+                        subscriber.onError(cause);
+                        return null;
                     });
                 }
             });

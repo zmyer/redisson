@@ -21,6 +21,7 @@ import java.util.List;
 import org.reactivestreams.Publisher;
 import org.redisson.PubSubMessageListener;
 import org.redisson.PubSubStatusListener;
+import org.redisson.RedissonFuture;
 import org.redisson.api.RTopicReactive;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.codec.Codec;
@@ -28,11 +29,8 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandReactiveExecutor;
 import org.redisson.connection.PubSubConnectionEntry;
 import org.redisson.core.MessageListener;
+import org.redisson.core.RFuture;
 import org.redisson.core.StatusListener;
-
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
@@ -79,22 +77,15 @@ public class RedissonTopicReactive<M> implements RTopicReactive<M> {
     }
 
     private Publisher<Integer> addListener(final RedisPubSubListener<M> pubSubListener) {
-        final Promise<Integer> promise = commandExecutor.getConnectionManager().newPromise();
-        Future<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().subscribe(codec, name, pubSubListener);
-        future.addListener(new FutureListener<PubSubConnectionEntry>() {
-            @Override
-            public void operationComplete(Future<PubSubConnectionEntry> future) throws Exception {
-                if (!future.isSuccess()) {
-                    promise.setFailure(future.cause());
-                    return;
-                }
-
-                promise.setSuccess(System.identityHashCode(pubSubListener));
-            }
+        final RedissonFuture<Integer> promise = commandExecutor.getConnectionManager().newPromise();
+        RFuture<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().subscribe(codec, name, pubSubListener);
+        future.thenAccept(r -> promise.setSuccess(System.identityHashCode(pubSubListener)))
+        .exceptionally(cause -> {
+            promise.setFailure(cause);
+            return null;
         });
         return new NettyFuturePublisher<Integer>(promise);
     }
-
 
     @Override
     public void removeListener(int listenerId) {
@@ -115,6 +106,5 @@ public class RedissonTopicReactive<M> implements RTopicReactive<M> {
         // listener has been re-attached
         removeListener(listenerId);
     }
-
 
 }

@@ -30,9 +30,8 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.convertor.BooleanReplayConvertor;
 import org.redisson.client.protocol.decoder.ListScanResult;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.core.RFuture;
 import org.redisson.core.RSet;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * Distributed and concurrent implementation of {@link java.util.Set}
@@ -57,7 +56,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Integer> sizeAsync() {
+    public RFuture<Integer> sizeAsync() {
         return commandExecutor.readAsync(getName(), codec, RedisCommands.SCARD_INT, getName());
     }
 
@@ -72,7 +71,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> containsAsync(Object o) {
+    public RFuture<Boolean> containsAsync(Object o) {
         return commandExecutor.readAsync(getName(o), codec, RedisCommands.SISMEMBER, getName(o), o);
     }
 
@@ -81,7 +80,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     ListScanResult<V> scanIterator(String name, InetSocketAddress client, long startPos) {
-        Future<ListScanResult<V>> f = commandExecutor.readAsync(client, name, codec, RedisCommands.SSCAN, name, startPos);
+        RFuture<ListScanResult<V>> f = commandExecutor.readAsync(client, name, codec, RedisCommands.SSCAN, name, startPos);
         return get(f);
     }
 
@@ -103,7 +102,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Set<V>> readAllAsync() {
+    public RFuture<Set<V>> readAllAsync() {
         return commandExecutor.readAsync(getName(), codec, RedisCommands.SMEMBERS, getName());
     }
 
@@ -130,7 +129,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> addAsync(V e) {
+    public RFuture<Boolean> addAsync(V e) {
         return commandExecutor.writeAsync(getName(e), codec, RedisCommands.SADD_SINGLE, getName(e), e);
     }
 
@@ -140,12 +139,12 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<V> removeRandomAsync() {
+    public RFuture<V> removeRandomAsync() {
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.SPOP_SINGLE, getName());
     }
 
     @Override
-    public Future<Boolean> removeAsync(Object o) {
+    public RFuture<Boolean> removeAsync(Object o) {
         return commandExecutor.writeAsync(getName(o), codec, RedisCommands.SREM_SINGLE, getName(o), o);
     }
 
@@ -155,7 +154,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> moveAsync(String destination, V member) {
+    public RFuture<Boolean> moveAsync(String destination, V member) {
         return commandExecutor.writeAsync(getName(member), codec, RedisCommands.SMOVE, getName(member), destination, member);
     }
 
@@ -170,7 +169,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> containsAllAsync(Collection<?> c) {
+    public RFuture<Boolean> containsAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(true);
         }
@@ -189,7 +188,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> addAllAsync(Collection<? extends V> c) {
+    public RFuture<Boolean> addAllAsync(Collection<? extends V> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(false);
         }
@@ -206,7 +205,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> retainAllAsync(Collection<?> c) {
+    public RFuture<Boolean> retainAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return deleteAsync();
         }
@@ -220,7 +219,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Boolean> removeAllAsync(Collection<?> c) {
+    public RFuture<Boolean> removeAllAsync(Collection<?> c) {
         if (c.isEmpty()) {
             return newSucceededFuture(false);
         }
@@ -243,7 +242,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Integer> unionAsync(String... names) {
+    public RFuture<Integer> unionAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));
@@ -256,7 +255,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Set<V>> readUnionAsync(String... names) {
+    public RFuture<Set<V>> readUnionAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));
@@ -269,7 +268,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Integer> diffAsync(String... names) {
+    public RFuture<Integer> diffAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));
@@ -282,7 +281,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Set<V>> readDiffAsync(String... names) {
+    public RFuture<Set<V>> readDiffAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));
@@ -295,7 +294,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Integer> intersectionAsync(String... names) {
+    public RFuture<Integer> intersectionAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));
@@ -308,7 +307,7 @@ public class RedissonSet<V> extends RedissonExpirable implements RSet<V> {
     }
 
     @Override
-    public Future<Set<V>> readIntersectionAsync(String... names) {
+    public RFuture<Set<V>> readIntersectionAsync(String... names) {
         List<Object> args = new ArrayList<Object>(names.length + 1);
         args.add(getName());
         args.addAll(Arrays.asList(names));

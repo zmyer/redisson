@@ -12,10 +12,8 @@ import java.util.concurrent.ExecutionException;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.redisson.core.RFuture;
 import org.redisson.core.RSet;
-import org.redisson.core.RSetCache;
-
-import io.netty.util.concurrent.Future;
 
 public class RedissonSetTest extends BaseTest {
 
@@ -76,7 +74,7 @@ public class RedissonSetTest extends BaseTest {
     @Test
     public void testAddAsync() throws InterruptedException, ExecutionException {
         RSet<Integer> set = redisson.getSet("simple");
-        Future<Boolean> future = set.addAsync(2);
+        RFuture<Boolean> future = set.addAsync(2);
         Assert.assertTrue(future.get());
 
         Assert.assertTrue(set.contains(2));

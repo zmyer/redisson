@@ -32,8 +32,6 @@ import io.netty.util.concurrent.Future;
  */
 public interface CommandSyncExecutor {
 
-    <V> V get(Future<V> future);
-
     <T, R> R write(Integer slot, Codec codec, RedisCommand<T> command, Object ... params);
 
     <T, R> R write(String key, Codec codec, RedisCommand<T> command, Object ... params);

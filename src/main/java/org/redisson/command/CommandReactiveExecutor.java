@@ -24,6 +24,7 @@ import org.redisson.SlotCallback;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.connection.ConnectionManager;
+import org.redisson.core.RFuture;
 
 import io.netty.util.concurrent.Future;
 
@@ -34,7 +35,7 @@ import io.netty.util.concurrent.Future;
  */
 public interface CommandReactiveExecutor extends CommandAsyncExecutor {
 
-    <R> Publisher<R> reactive(Future<R> future);
+    <R> Publisher<R> reactive(RFuture<R> future);
 
     ConnectionManager getConnectionManager();
 

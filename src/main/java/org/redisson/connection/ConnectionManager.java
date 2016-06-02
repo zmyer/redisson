@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.redisson.MasterSlaveServersConfig;
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisPubSubListener;
@@ -28,13 +29,13 @@ import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.cluster.ClusterSlotRange;
 import org.redisson.core.NodeType;
+import org.redisson.core.RFuture;
 import org.redisson.misc.InfinitySemaphoreLatch;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.Promise;
 
 /**
  *
@@ -45,7 +46,7 @@ public interface ConnectionManager {
 
     boolean isClusterMode();
 
-    <R> Future<R> newSucceededFuture(R value);
+    <R> RFuture<R> newSucceededFuture(R value);
 
     ConnectionEventsHub getConnectionEventsHub();
 
@@ -53,13 +54,13 @@ public interface ConnectionManager {
 
     boolean isShuttingDown();
 
-    Promise<PubSubConnectionEntry> subscribe(Codec codec, String channelName, RedisPubSubListener<?> listener);
+    RFuture<PubSubConnectionEntry> subscribe(Codec codec, String channelName, RedisPubSubListener<?> listener);
 
     ConnectionInitializer getConnectListener();
 
     IdleConnectionWatcher getConnectionWatcher();
 
-    <R> Future<R> newFailedFuture(Throwable cause);
+    <R> RFuture<R> newFailedFuture(Throwable cause);
 
     Collection<RedisClientEntry> getClients();
 
@@ -73,15 +74,15 @@ public interface ConnectionManager {
 
     Map<ClusterSlotRange, MasterSlaveEntry> getEntries();
 
-    <R> Promise<R> newPromise();
+    <R> RedissonFuture<R> newPromise();
 
     void releaseRead(NodeSource source, RedisConnection connection);
 
     void releaseWrite(NodeSource source, RedisConnection connection);
 
-    Future<RedisConnection> connectionReadOp(NodeSource source, RedisCommand<?> command);
+    RFuture<RedisConnection> connectionReadOp(NodeSource source, RedisCommand<?> command);
 
-    Future<RedisConnection> connectionWriteOp(NodeSource source, RedisCommand<?> command);
+    RFuture<RedisConnection> connectionWriteOp(NodeSource source, RedisCommand<?> command);
 
     RedisClient createClient(String host, int port, int timeout);
 
@@ -91,7 +92,7 @@ public interface ConnectionManager {
 
     PubSubConnectionEntry getPubSubEntry(String channelName);
 
-    Future<PubSubConnectionEntry> psubscribe(String pattern, Codec codec);
+    RFuture<PubSubConnectionEntry> psubscribe(String pattern, Codec codec);
 
     Codec unsubscribe(String channelName);
 

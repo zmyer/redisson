@@ -21,14 +21,14 @@ import java.util.Collection;
 
 public interface RHyperLogLogAsync<V> extends RExpirableAsync {
 
-    Future<Boolean> addAsync(V obj);
+    RFuture<Boolean> addAsync(V obj);
 
-    Future<Boolean> addAllAsync(Collection<V> objects);
+    RFuture<Boolean> addAllAsync(Collection<V> objects);
 
-    Future<Long> countAsync();
+    RFuture<Long> countAsync();
 
-    Future<Long> countWithAsync(String ... otherLogNames);
+    RFuture<Long> countWithAsync(String ... otherLogNames);
 
-    Future<Void> mergeWithAsync(String ... otherLogNames);
+    RFuture<Void> mergeWithAsync(String ... otherLogNames);
 
 }

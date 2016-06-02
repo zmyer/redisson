@@ -16,8 +16,10 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.redisson.client.RedisException;
 import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.codec.MsgPackJacksonCodec;
+import org.redisson.core.RFuture;
 import org.redisson.core.RMapCache;
 
 import io.netty.util.concurrent.Future;
@@ -571,12 +573,12 @@ public class RedissonMapCacheTest extends BaseTest {
     @Test
     public void testPutAsync() throws InterruptedException, ExecutionException {
         RMapCache<Integer, Integer> map = redisson.getMapCache("simple");
-        Future<Integer> future = map.putAsync(2, 3);
+        RFuture<Integer> future = map.putAsync(2, 3);
         Assert.assertNull(future.get());
 
         Assert.assertEquals((Integer) 3, map.get(2));
 
-        Future<Integer> future1 = map.putAsync(2, 4);
+        RFuture<Integer> future1 = map.putAsync(2, 4);
         Assert.assertEquals((Integer) 3, future1.get());
 
         Assert.assertEquals((Integer) 4, map.get(2));
@@ -736,7 +738,7 @@ public class RedissonMapCacheTest extends BaseTest {
         Assert.assertEquals(1, map.size());
     }
 
-    @Test(timeout = 5000)
+    @Test(timeout = 5000, expected = RedisException.class)
     public void testDeserializationErrorReturnsErrorImmediately() throws Exception {
         redisson.getConfig().setCodec(new JsonJacksonCodec());
 
@@ -746,12 +748,7 @@ public class RedissonMapCacheTest extends BaseTest {
         Assert.assertEquals("test-val", object.getTestField());
         map.put("test-key", object);
 
-        try {
-            map.get("test-key");
-            Assert.fail("Expected exception from map.get() call");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        map.get("test-key");
     }
 
     

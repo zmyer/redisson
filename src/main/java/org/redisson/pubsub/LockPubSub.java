@@ -15,16 +15,15 @@
  */
 package org.redisson.pubsub;
 
+import org.redisson.RedissonFuture;
 import org.redisson.RedissonLockEntry;
-
-import io.netty.util.concurrent.Promise;
 
 public class LockPubSub extends PublishSubscribe<RedissonLockEntry> {
 
     public static final Long unlockMessage = 0L;
 
     @Override
-    protected RedissonLockEntry createEntry(Promise<RedissonLockEntry> newPromise) {
+    protected RedissonLockEntry createEntry(RedissonFuture<RedissonLockEntry> newPromise) {
         return new RedissonLockEntry(newPromise);
     }
 

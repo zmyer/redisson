@@ -17,11 +17,10 @@ package org.redisson.connection.pool;
 
 import org.redisson.MasterSlaveServersConfig;
 import org.redisson.client.RedisPubSubConnection;
+import org.redisson.connection.ClientConnectionsEntry;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.MasterSlaveEntry;
-import org.redisson.connection.ClientConnectionsEntry;
-
-import io.netty.util.concurrent.Future;
+import org.redisson.core.RFuture;
 
 public class PubSubConnectionPool extends ConnectionPool<RedisPubSubConnection> {
 
@@ -40,7 +39,7 @@ public class PubSubConnectionPool extends ConnectionPool<RedisPubSubConnection> 
     }
 
     @Override
-    protected Future<RedisPubSubConnection> connect(ClientConnectionsEntry entry) {
+    protected RFuture<RedisPubSubConnection> connect(ClientConnectionsEntry entry) {
         return entry.connectPubSub();
     }
 

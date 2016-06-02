@@ -24,10 +24,9 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.connection.PubSubConnectionEntry;
 import org.redisson.core.MessageListener;
+import org.redisson.core.RFuture;
 import org.redisson.core.RTopic;
 import org.redisson.core.StatusListener;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
@@ -62,7 +61,7 @@ public class RedissonTopic<M> implements RTopic<M> {
     }
 
     @Override
-    public Future<Long> publishAsync(M message) {
+    public RFuture<Long> publishAsync(M message) {
         return commandExecutor.writeAsync(name, codec, RedisCommands.PUBLISH, name, message);
     }
 
@@ -78,8 +77,8 @@ public class RedissonTopic<M> implements RTopic<M> {
     }
 
     private int addListener(RedisPubSubListener<M> pubSubListener) {
-        Future<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().subscribe(codec, name, pubSubListener);
-        future.syncUninterruptibly();
+        RFuture<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().subscribe(codec, name, pubSubListener);
+        commandExecutor.get(future);
         return System.identityHashCode(pubSubListener);
     }
 

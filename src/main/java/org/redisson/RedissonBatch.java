@@ -27,14 +27,15 @@ import org.redisson.core.RBitSetAsync;
 import org.redisson.core.RBlockingDequeAsync;
 import org.redisson.core.RBlockingQueueAsync;
 import org.redisson.core.RBucketAsync;
-import org.redisson.core.RMapCacheAsync;
 import org.redisson.core.RDequeAsync;
+import org.redisson.core.RFuture;
 import org.redisson.core.RHyperLogLogAsync;
 import org.redisson.core.RKeysAsync;
 import org.redisson.core.RLexSortedSetAsync;
 import org.redisson.core.RListAsync;
 import org.redisson.core.RListMultimap;
 import org.redisson.core.RMapAsync;
+import org.redisson.core.RMapCacheAsync;
 import org.redisson.core.RQueueAsync;
 import org.redisson.core.RScoredSortedSetAsync;
 import org.redisson.core.RScriptAsync;
@@ -42,8 +43,6 @@ import org.redisson.core.RSetAsync;
 import org.redisson.core.RSetCacheAsync;
 import org.redisson.core.RSetMultimap;
 import org.redisson.core.RTopicAsync;
-
-import io.netty.util.concurrent.Future;
 
 /**
  *
@@ -227,7 +226,7 @@ public class RedissonBatch implements RBatch {
     }
 
     @Override
-    public Future<List<?>> executeAsync() {
+    public RFuture<List<?>> executeAsync() {
         return executorService.executeAsync();
     }
 

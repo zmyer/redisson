@@ -33,8 +33,7 @@ import org.redisson.command.CommandExecutor;
 import org.redisson.connection.decoder.MapGetAllDecoder;
 import org.redisson.core.RBucket;
 import org.redisson.core.RBuckets;
-
-import io.netty.util.concurrent.Future;
+import org.redisson.core.RFuture;
 
 public class RedissonBuckets implements RBuckets {
 
@@ -73,7 +72,7 @@ public class RedissonBuckets implements RBuckets {
         }
 
         RedisCommand<Map<Object, Object>> command = new RedisCommand<Map<Object, Object>>("MGET", new MapGetAllDecoder(Arrays.<Object>asList(keys), 0), ValueType.OBJECTS);
-        Future<Map<String, V>> future = commandExecutor.readAsync(keys[0], new DelegateDecoderCodec(codec), command, keys);
+        RFuture<Map<String, V>> future = commandExecutor.readAsync(keys[0], new DelegateDecoderCodec(codec), command, keys);
         return commandExecutor.get(future);
     }
 

@@ -21,12 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.redisson.client.RedisConnection;
 import org.redisson.client.protocol.RedisCommand;
+import org.redisson.core.RFuture;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 
-public class FutureConnectionListener<T extends RedisConnection> implements FutureListener<Object> {
+public class FutureConnectionListener<T extends RedisConnection> {
 
     private final AtomicInteger commandsCounter = new AtomicInteger();
 
@@ -45,8 +44,16 @@ public class FutureConnectionListener<T extends RedisConnection> implements Futu
         commands.add(new Runnable() {
             @Override
             public void run() {
-                Future<Object> future = connection.async(command, params);
-                future.addListener(FutureConnectionListener.this);
+                RFuture<Object> future = connection.async(command, params);
+                future.thenAccept(x -> {
+                    if (commandsCounter.decrementAndGet() == 0) {
+                        connectionPromise.trySuccess(connection);
+                    }
+                }).exceptionally(cause -> {
+                    connection.closeAsync();
+                    connectionPromise.tryFailure(cause);
+                    return null;
+                });
             }
         });
     }
@@ -61,18 +68,6 @@ public class FutureConnectionListener<T extends RedisConnection> implements Futu
             command.run();
         }
         commands.clear();
-    }
-
-    @Override
-    public void operationComplete(Future<Object> future) throws Exception {
-        if (!future.isSuccess()) {
-            connection.closeAsync();
-            connectionPromise.tryFailure(future.cause());
-            return;
-        }
-        if (commandsCounter.decrementAndGet() == 0) {
-            connectionPromise.trySuccess(connection);
-        }
     }
 
 }

@@ -24,12 +24,12 @@ import org.redisson.api.RBatchReactive;
 import org.redisson.api.RBitSetReactive;
 import org.redisson.api.RBlockingQueueReactive;
 import org.redisson.api.RBucketReactive;
-import org.redisson.api.RMapCacheReactive;
 import org.redisson.api.RDequeReactive;
 import org.redisson.api.RHyperLogLogReactive;
 import org.redisson.api.RKeysReactive;
 import org.redisson.api.RLexSortedSetReactive;
 import org.redisson.api.RListReactive;
+import org.redisson.api.RMapCacheReactive;
 import org.redisson.api.RMapReactive;
 import org.redisson.api.RPatternTopicReactive;
 import org.redisson.api.RQueueReactive;
@@ -51,17 +51,18 @@ import org.redisson.connection.SingleConnectionManager;
 import org.redisson.core.ClusterNode;
 import org.redisson.core.Node;
 import org.redisson.core.NodesGroup;
+import org.redisson.core.RFuture;
 import org.redisson.reactive.RedissonAtomicLongReactive;
 import org.redisson.reactive.RedissonBatchReactive;
 import org.redisson.reactive.RedissonBitSetReactive;
 import org.redisson.reactive.RedissonBlockingQueueReactive;
 import org.redisson.reactive.RedissonBucketReactive;
-import org.redisson.reactive.RedissonMapCacheReactive;
 import org.redisson.reactive.RedissonDequeReactive;
 import org.redisson.reactive.RedissonHyperLogLogReactive;
 import org.redisson.reactive.RedissonKeysReactive;
 import org.redisson.reactive.RedissonLexSortedSetReactive;
 import org.redisson.reactive.RedissonListReactive;
+import org.redisson.reactive.RedissonMapCacheReactive;
 import org.redisson.reactive.RedissonMapReactive;
 import org.redisson.reactive.RedissonPatternTopicReactive;
 import org.redisson.reactive.RedissonQueueReactive;
@@ -70,8 +71,6 @@ import org.redisson.reactive.RedissonScriptReactive;
 import org.redisson.reactive.RedissonSetCacheReactive;
 import org.redisson.reactive.RedissonSetReactive;
 import org.redisson.reactive.RedissonTopicReactive;
-
-import io.netty.util.concurrent.Future;
 
 /**
  * Main infrastructure class allows to get access
@@ -130,7 +129,7 @@ public class RedissonReactive implements RedissonReactiveClient {
 
     @Override
     public <V> List<RBucketReactive<V>> findBuckets(String pattern) {
-        Future<Collection<String>> r = commandExecutor.readAllAsync(RedisCommands.KEYS, pattern);
+        RFuture<Collection<String>> r = commandExecutor.readAllAsync(RedisCommands.KEYS, pattern);
         Collection<String> keys = commandExecutor.get(r);
 
         List<RBucketReactive<V>> buckets = new ArrayList<RBucketReactive<V>>(keys.size());

@@ -21,6 +21,7 @@ import java.util.List;
 import org.reactivestreams.Publisher;
 import org.redisson.PubSubPatternMessageListener;
 import org.redisson.PubSubPatternStatusListener;
+import org.redisson.RedissonFuture;
 import org.redisson.api.RPatternTopicReactive;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.codec.Codec;
@@ -28,10 +29,7 @@ import org.redisson.command.CommandReactiveExecutor;
 import org.redisson.connection.PubSubConnectionEntry;
 import org.redisson.core.PatternMessageListener;
 import org.redisson.core.PatternStatusListener;
-
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
+import org.redisson.core.RFuture;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
@@ -58,39 +56,33 @@ public class RedissonPatternTopicReactive<M> implements RPatternTopicReactive<M>
 
     @Override
     public Publisher<Integer> addListener(PatternStatusListener listener) {
-        Promise<Integer> promise = commandExecutor.getConnectionManager().newPromise();
+        RedissonFuture<Integer> promise = commandExecutor.getConnectionManager().newPromise();
         addListener(new PubSubPatternStatusListener(listener, name), promise);
         return new NettyFuturePublisher<Integer>(promise);
     };
 
     @Override
     public Publisher<Integer> addListener(PatternMessageListener<M> listener) {
-        Promise<Integer> promise = commandExecutor.getConnectionManager().newPromise();
+        RedissonFuture<Integer> promise = commandExecutor.getConnectionManager().newPromise();
         PubSubPatternMessageListener<M> pubSubListener = new PubSubPatternMessageListener<M>(listener, name);
         addListener(pubSubListener, promise);
         return new NettyFuturePublisher<Integer>(promise);
     }
 
-    private void addListener(final RedisPubSubListener<M> pubSubListener, final Promise<Integer> promise) {
-        Future<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().psubscribe(name, codec);
-        future.addListener(new FutureListener<PubSubConnectionEntry>() {
-            @Override
-            public void operationComplete(Future<PubSubConnectionEntry> future) throws Exception {
-                if (!future.isSuccess()) {
-                    promise.setFailure(future.cause());
+    private void addListener(final RedisPubSubListener<M> pubSubListener, final RedissonFuture<Integer> promise) {
+        RFuture<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().psubscribe(name, codec);
+        future.thenAccept(entry -> {
+            synchronized (entry) {
+                if (entry.isActive()) {
+                    entry.addListener(name, pubSubListener);
+                    promise.setSuccess(pubSubListener.hashCode());
                     return;
                 }
-
-                PubSubConnectionEntry entry = future.getNow();
-                synchronized (entry) {
-                    if (entry.isActive()) {
-                        entry.addListener(name, pubSubListener);
-                        promise.setSuccess(pubSubListener.hashCode());
-                        return;
-                    }
-                }
-                addListener(pubSubListener, promise);
             }
+            addListener(pubSubListener, promise);
+        }).exceptionally(cause -> {
+            promise.setFailure(cause);
+            return null;
         });
     }
 

@@ -17,6 +17,7 @@ package org.redisson.command;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisException;
 import org.redisson.client.codec.Codec;
@@ -24,6 +25,7 @@ import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.decoder.MultiDecoder;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.NodeSource;
+import org.redisson.core.RFuture;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.util.Timeout;
@@ -34,15 +36,15 @@ public class AsyncDetails<V, R> {
 
     static final ConcurrentLinkedQueue<AsyncDetails> queue = new ConcurrentLinkedQueue<AsyncDetails>();
 
-    Future<RedisConnection> connectionFuture;
+    RFuture<RedisConnection> connectionFuture;
     ConnectionManager connectionManager;
-    Promise<R> attemptPromise;
+    RedissonFuture<R> attemptPromise;
     boolean readOnlyMode;
     NodeSource source;
     Codec codec;
     RedisCommand<V> command;
     Object[] params;
-    Promise<R> mainPromise;
+    RedissonFuture<R> mainPromise;
     int attempt;
 
 
@@ -69,10 +71,10 @@ public class AsyncDetails<V, R> {
 //        queue.add(details);
     }
 
-    public void init(Future<RedisConnection> connectionFuture,
-            Promise<R> attemptPromise, boolean readOnlyMode, NodeSource source,
+    public void init(RFuture<RedisConnection> connectionFuture,
+            RedissonFuture<R> attemptPromise, boolean readOnlyMode, NodeSource source,
             Codec codec, RedisCommand<V> command, Object[] params,
-            Promise<R> mainPromise, int attempt) {
+            RedissonFuture<R> mainPromise, int attempt) {
         this.connectionFuture = connectionFuture;
         this.attemptPromise = attemptPromise;
         this.readOnlyMode = readOnlyMode;
@@ -108,11 +110,11 @@ public class AsyncDetails<V, R> {
         this.timeout = timeout;
     }
 
-    public Future<RedisConnection> getConnectionFuture() {
+    public RFuture<RedisConnection> getConnectionFuture() {
         return connectionFuture;
     }
 
-    public Promise<R> getAttemptPromise() {
+    public RedissonFuture<R> getAttemptPromise() {
         return attemptPromise;
     }
 
@@ -136,7 +138,7 @@ public class AsyncDetails<V, R> {
         return params;
     }
 
-    public Promise<R> getMainPromise() {
+    public RedissonFuture<R> getMainPromise() {
         return mainPromise;
     }
 

@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisAskException;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisLoadingException;
@@ -39,6 +40,7 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.NodeSource;
 import org.redisson.connection.NodeSource.Redirect;
+import org.redisson.core.RFuture;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -89,7 +91,7 @@ public class CommandBatchService extends CommandReactiveService {
 
     @Override
     protected <V, R> void async(boolean readOnlyMode, NodeSource nodeSource,
-            Codec codec, RedisCommand<V> command, Object[] params, Promise<R> mainPromise, int attempt) {
+            Codec codec, RedisCommand<V> command, Object[] params, RedissonFuture<R> mainPromise, int attempt) {
         if (executed) {
             throw new IllegalStateException("Batch already has been executed!");
         }
@@ -114,7 +116,7 @@ public class CommandBatchService extends CommandReactiveService {
         return get(executeAsync());
     }
 
-    public Future<Void> executeAsyncVoid() {
+    public RFuture<Void> executeAsyncVoid() {
         if (executed) {
             throw new IllegalStateException("Batch already executed!");
         }
@@ -124,12 +126,10 @@ public class CommandBatchService extends CommandReactiveService {
         }
         executed = true;
 
-        Promise<Void> voidPromise = connectionManager.newPromise();
-        voidPromise.addListener(new FutureListener<Void>() {
-            @Override
-            public void operationComplete(Future<Void> future) throws Exception {
-                commands = null;
-            }
+        RedissonFuture<Void> voidPromise = connectionManager.newPromise();
+        voidPromise.handle((r, ex) -> {
+            commands = null;
+			return null;
         });
 
         AtomicInteger slots = new AtomicInteger(commands.size());
@@ -139,7 +139,7 @@ public class CommandBatchService extends CommandReactiveService {
         return voidPromise;
     }
 
-    public Future<List<?>> executeAsync() {
+    public RFuture<List<?>> executeAsync() {
         if (executed) {
             throw new IllegalStateException("Batch already executed!");
         }
@@ -149,8 +149,8 @@ public class CommandBatchService extends CommandReactiveService {
         }
         executed = true;
 
-        Promise<Void> voidPromise = connectionManager.newPromise();
-        final Promise<List<?>> promise = connectionManager.newPromise();
+        RedissonFuture<Void> voidPromise = connectionManager.newPromise();
+        RedissonFuture<List<?>> promise = connectionManager.newPromise();
         voidPromise.addListener(new FutureListener<Void>() {
             @Override
             public void operationComplete(Future<Void> future) throws Exception {
@@ -181,7 +181,7 @@ public class CommandBatchService extends CommandReactiveService {
         return promise;
     }
 
-    public void execute(final Entry entry, final NodeSource source, final Promise<Void> mainPromise, final AtomicInteger slots, final int attempt) {
+    public void execute(final Entry entry, final NodeSource source, final RedissonFuture<Void> mainPromise, final AtomicInteger slots, final int attempt) {
         if (mainPromise.isCancelled()) {
             return;
         }
@@ -191,11 +191,11 @@ public class CommandBatchService extends CommandReactiveService {
             return;
         }
 
-        final Promise<Void> attemptPromise = connectionManager.newPromise();
+        final RedissonFuture<Void> attemptPromise = connectionManager.newPromise();
 
         final AsyncDetails details = new AsyncDetails();
 
-        final Future<RedisConnection> connectionFuture;
+        final RFuture<RedisConnection> connectionFuture;
         if (entry.isReadOnlyMode()) {
             connectionFuture = connectionManager.connectionReadOp(source, null);
         } else {
@@ -241,17 +241,15 @@ public class CommandBatchService extends CommandReactiveService {
             }
         };
 
-        Timeout timeout = connectionManager.newTimeout(retryTimerTask, connectionManager.getConfig().getRetryInterval(), TimeUnit.MILLISECONDS);
+        Timeout timeout = connectionManager.newTimeout(retryTimerTask, connectionManager.getConfig().getRetryInterval()*100, TimeUnit.MILLISECONDS);
         details.setTimeout(timeout);
 
         if (connectionFuture.isDone()) {
             checkConnectionFuture(entry, source, mainPromise, attemptPromise, details, connectionFuture);
         } else {
-            connectionFuture.addListener(new FutureListener<RedisConnection>() {
-                @Override
-                public void operationComplete(Future<RedisConnection> connFuture) throws Exception {
-                    checkConnectionFuture(entry, source, mainPromise, attemptPromise, details, connFuture);
-                }
+            connectionFuture.handle((r, ex) -> {
+                checkConnectionFuture(entry, source, mainPromise, attemptPromise, details, connectionFuture);
+                return null;
             });
         }
 
@@ -315,8 +313,8 @@ public class CommandBatchService extends CommandReactiveService {
     }
 
     private void checkConnectionFuture(final Entry entry, final NodeSource source,
-            final Promise<Void> mainPromise, final Promise<Void> attemptPromise, final AsyncDetails details,
-            Future<RedisConnection> connFuture) {
+            final RedissonFuture<Void> mainPromise, final RedissonFuture<Void> attemptPromise, final AsyncDetails details,
+            RFuture<RedisConnection> connFuture) {
         if (attemptPromise.isDone() || mainPromise.isCancelled() || connFuture.isCancelled()) {
             return;
         }
