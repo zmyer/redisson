@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.redisson.MasterSlaveServersConfig;
 import org.redisson.RedissonFuture;
 import org.redisson.client.ReconnectListener;
 import org.redisson.client.RedisClient;
@@ -170,6 +171,10 @@ public class ClientConnectionsEntry {
         connectionFuture.thenAccept(c -> {
             connectionManager.getConnectionEventsHub().fireConnect(c.getRedisClient().getAddr());
         });
+    }
+    
+    public MasterSlaveServersConfig getConfig() {
+        return connectionManager.getConfig();
     }
 
     public RFuture<RedisPubSubConnection> connectPubSub() {
