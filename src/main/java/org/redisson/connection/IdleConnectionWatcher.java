@@ -68,12 +68,8 @@ public class IdleConnectionWatcher {
                         final long timeInPool = currTime - c.getLastUsageTime();
                         if (timeInPool > config.getIdleConnectionTimeout()
                                 && validateAmount(entry) && entry.connections.remove(c)) {
-                            ChannelFuture future = c.closeAsync();
-                            future.addListener(new FutureListener<Void>() {
-                                @Override
-                                public void operationComplete(Future<Void> future) throws Exception {
-                                    log.debug("Connection {} has been closed due to idle timeout. Not used for {} ms", c.getChannel(), timeInPool);
-                                }
+                            c.closeAsync().addListener(x -> {
+                                log.debug("Connection {} has been closed due to idle timeout. Not used for {} ms", c.getChannel(), timeInPool);
                             });
                         }
                     }

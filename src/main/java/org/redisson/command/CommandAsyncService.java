@@ -414,12 +414,9 @@ public class CommandAsyncService implements CommandAsyncExecutor {
         if (attemptPromise.isDone()) {
             checkAttemptFuture(source, details, attemptPromise);
         } else {
-            attemptPromise.addListener(new FutureListener<R>() {
-
-                @Override
-                public void operationComplete(Future<R> future) throws Exception {
-                    checkAttemptFuture(source, details, future);
-                }
+            attemptPromise.handle((r, cause) -> {
+                checkAttemptFuture(source, details, attemptPromise);
+                return null;
             });
         }
     }
@@ -493,39 +490,35 @@ public class CommandAsyncService implements CommandAsyncExecutor {
             scheduledFuture = null;
         }
         
-        details.getMainPromise().addListener(new FutureListener<R>() {
-            @Override
-            public void operationComplete(Future<R> future) throws Exception {
-                if (scheduledFuture != null) {
-                    scheduledFuture.cancel(false);
-                }
-
-                synchronized (listener) {
-                    connectionManager.getShutdownPromise().removeListener(listener);
-                }
-                
-                // handling cancel operation for commands from skipTimeout collection
-                if ((future.isCancelled() && details.getAttemptPromise().cancel(true)) 
-                        || canceledByScheduler.get()) {
-                    connection.forceReconnectAsync();
-                    return;
-                }
-                
-                if (future.cause() instanceof RedissonShutdownException) {
-                    details.getAttemptPromise().tryFailure(future.cause());
-                }
+        details.getMainPromise().handle((r, cause) -> {
+            if (scheduledFuture != null) {
+                scheduledFuture.cancel(false);
             }
+
+            synchronized (listener) {
+                connectionManager.getShutdownPromise().removeListener(listener);
+            }
+            
+            // handling cancel operation for commands from skipTimeout collection
+            if ((details.getMainPromise().isCancelled() && details.getAttemptPromise().cancel(true)) 
+                    || canceledByScheduler.get()) {
+                connection.forceReconnectAsync();
+                return null;
+            }
+            
+            if (cause instanceof RedissonShutdownException) {
+                details.getAttemptPromise().tryFailure(cause);
+            }
+            return null;
         });
         
-        details.getAttemptPromise().addListener(new FutureListener<R>() {
-            @Override
-            public void operationComplete(Future<R> future) throws Exception {
-                if (future.isCancelled()) {
-                    // command should be removed due to 
-                    // ConnectionWatchdog blockingQueue reconnection logic
-                    connection.removeCurrentCommand();
-                }
+        details.getAttemptPromise().handle((r, cause) -> {
+            if (details.getAttemptPromise().isCancelled()) {
+                // command should be removed due to 
+                // ConnectionWatchdog blockingQueue reconnection logic
+                connection.removeCurrentCommand();
             }
+            return null;
         });
         
         synchronized (listener) {

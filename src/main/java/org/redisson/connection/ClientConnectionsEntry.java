@@ -16,6 +16,7 @@
 package org.redisson.connection;
 
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,11 +29,6 @@ import org.redisson.core.NodeType;
 import org.redisson.core.RFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.ImmediateEventExecutor;
-import io.netty.util.concurrent.Promise;
 
 public class ClientConnectionsEntry {
 
@@ -152,22 +148,22 @@ public class ClientConnectionsEntry {
         return connectionFuture;
     }
 
-    private <T extends RedisConnection> void addReconnectListener(RedissonFuture<T> connectionFuture, T conn) {
+    private <T extends RedisConnection> void addReconnectListener(CompletableFuture<T> connectionFuture, T conn) {
         addFireEventListener(conn, connectionFuture);
 
         conn.setReconnectListener(new ReconnectListener() {
             @Override
-            public void onReconnect(RedisConnection conn, RedissonFuture<RedisConnection> connectionFuture) {
+            public void onReconnect(RedisConnection conn, CompletableFuture<RedisConnection> connectionFuture) {
                 addFireEventListener(conn, connectionFuture);
             }
         });
     }
 
-    private <T extends RedisConnection> void addFireEventListener(T conn, RedissonFuture<T> connectionFuture) {
+    private <T extends RedisConnection> void addFireEventListener(T conn, CompletableFuture<T> connectionFuture) {
         connectionManager.getConnectListener().onConnect(connectionFuture, conn, nodeType, connectionManager.getConfig());
         
-        if (connectionFuture.isSuccess()) {
-            connectionManager.getConnectionEventsHub().fireConnect(connectionFuture.getNow().getRedisClient().getAddr());
+        if (connectionFuture.isDone() && !connectionFuture.isCompletedExceptionally()) {
+            connectionManager.getConnectionEventsHub().fireConnect(connectionFuture.getNow(null).getRedisClient().getAddr());
             return;
         }
 

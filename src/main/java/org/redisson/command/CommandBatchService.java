@@ -151,29 +151,24 @@ public class CommandBatchService extends CommandReactiveService {
 
         RedissonFuture<Void> voidPromise = connectionManager.newPromise();
         RedissonFuture<List<?>> promise = connectionManager.newPromise();
-        voidPromise.addListener(new FutureListener<Void>() {
-            @Override
-            public void operationComplete(Future<Void> future) throws Exception {
-                if (!future.isSuccess()) {
-                    promise.setFailure(future.cause());
-                    commands = null;
-                    return;
-                }
-
-                List<BatchCommandData> entries = new ArrayList<BatchCommandData>();
-                for (Entry e : commands.values()) {
-                    entries.addAll(e.getCommands());
-                }
-                Collections.sort(entries);
-                List<Object> result = new ArrayList<Object>(entries.size());
-                for (BatchCommandData<?, ?> commandEntry : entries) {
-                    result.add(commandEntry.getPromise().getNow());
-                }
-                promise.setSuccess(result);
-                commands = null;
+        voidPromise.thenAccept(r -> {
+            List<BatchCommandData> entries = new ArrayList<BatchCommandData>();
+            for (Entry e : commands.values()) {
+                entries.addAll(e.getCommands());
             }
+            Collections.sort(entries);
+            List<Object> result = new ArrayList<Object>(entries.size());
+            for (BatchCommandData<?, ?> commandEntry : entries) {
+                result.add(commandEntry.getPromise().getNow());
+            }
+            promise.setSuccess(result);
+            commands = null;
+        }).exceptionally(cause -> {
+            promise.setFailure(cause);
+            commands = null;
+            return null;
         });
-
+        
         AtomicInteger slots = new AtomicInteger(commands.size());
         for (java.util.Map.Entry<Integer, Entry> e : commands.entrySet()) {
             execute(e.getValue(), new NodeSource(e.getKey()), voidPromise, slots, 0);

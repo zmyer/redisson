@@ -45,6 +45,8 @@ import io.netty.util.concurrent.Future;
 public interface ConnectionManager {
 
     boolean isClusterMode();
+    
+    <V> V syncUninterruptibly(RFuture<V> future);
 
     <R> RFuture<R> newSucceededFuture(R value);
 

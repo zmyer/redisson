@@ -15,10 +15,10 @@
  */
 package org.redisson.client;
 
-import org.redisson.RedissonFuture;
+import java.util.concurrent.CompletableFuture;
 
 public interface ReconnectListener {
 
-    void onReconnect(RedisConnection redisConnection, RedissonFuture<RedisConnection> connectionFuture) throws RedisException;
+    void onReconnect(RedisConnection redisConnection, CompletableFuture<RedisConnection> connectionFuture) throws RedisException;
 
 }

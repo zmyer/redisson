@@ -15,17 +15,17 @@
  */
 package org.redisson.connection;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.redisson.MasterSlaveServersConfig;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisException;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.core.NodeType;
 
-import io.netty.util.concurrent.Promise;
-
 public class DefaultConnectionListener implements ConnectionInitializer {
 
-    public final <T extends RedisConnection> void onConnect(Promise<T> connectionFuture, T conn, NodeType nodeType, MasterSlaveServersConfig config) {
+    public final <T extends RedisConnection> void onConnect(CompletableFuture<T> connectionFuture, T conn, NodeType nodeType, MasterSlaveServersConfig config) {
         FutureConnectionListener<T> listener = new FutureConnectionListener<T>(connectionFuture, conn);
         doConnect(config, nodeType, listener);
         listener.executeCommands();

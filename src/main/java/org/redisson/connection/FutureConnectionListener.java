@@ -17,23 +17,22 @@ package org.redisson.connection;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.redisson.client.RedisConnection;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.core.RFuture;
 
-import io.netty.util.concurrent.Promise;
-
 public class FutureConnectionListener<T extends RedisConnection> {
 
     private final AtomicInteger commandsCounter = new AtomicInteger();
 
-    private final Promise<T> connectionPromise;
+    private final CompletableFuture<T> connectionPromise;
     private final T connection;
     private final List<Runnable> commands = new ArrayList<Runnable>(4);
 
-    public FutureConnectionListener(Promise<T> connectionFuture, T connection) {
+    public FutureConnectionListener(CompletableFuture<T> connectionFuture, T connection) {
         super();
         this.connectionPromise = connectionFuture;
         this.connection = connection;
@@ -47,11 +46,11 @@ public class FutureConnectionListener<T extends RedisConnection> {
                 RFuture<Object> future = connection.async(command, params);
                 future.thenAccept(x -> {
                     if (commandsCounter.decrementAndGet() == 0) {
-                        connectionPromise.trySuccess(connection);
+                        connectionPromise.complete(connection);
                     }
                 }).exceptionally(cause -> {
                     connection.closeAsync();
-                    connectionPromise.tryFailure(cause);
+                    connectionPromise.completeExceptionally(cause);
                     return null;
                 });
             }
@@ -60,7 +59,7 @@ public class FutureConnectionListener<T extends RedisConnection> {
 
     public void executeCommands() {
         if (commands.isEmpty()) {
-            connectionPromise.setSuccess(connection);
+            connectionPromise.complete(connection);
             return;
         }
 

@@ -118,14 +118,7 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
             RedisConnection rc = new RedisConnection(connection.getRedisClient(), channel);
             RedissonFuture<RedisConnection> connectionFuture = new RedissonFuture<>();
             connection.getReconnectListener().onReconnect(rc, connectionFuture);
-            connectionFuture.addListener(new FutureListener<RedisConnection>() {
-                @Override
-                public void operationComplete(Future<RedisConnection> future) throws Exception {
-                    if (future.isSuccess()) {
-                        refresh(connection, channel);
-                    }
-                }
-            });
+            connectionFuture.thenAccept(r -> refresh(connection, channel));
         } else {
             refresh(connection, channel);
         }

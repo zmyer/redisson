@@ -25,6 +25,7 @@ import org.redisson.BaseMasterSlaveServersConfig;
 import org.redisson.Config;
 import org.redisson.ElasticacheServersConfig;
 import org.redisson.MasterSlaveServersConfig;
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisConnectionException;
@@ -34,7 +35,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.util.concurrent.GlobalEventExecutor;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 
 /**
@@ -110,9 +110,9 @@ public class ElasticacheConnectionManager extends MasterSlaveConnectionManager {
         RedisClient client = createClient(addr.getHost(), addr.getPort(), cfg.getConnectTimeout());
         try {
             connection = client.connect();
-            Promise<RedisConnection> future = newPromise();
+            RedissonFuture<RedisConnection> future = newPromise();
             connectListener.onConnect(future, connection, null, config);
-            future.syncUninterruptibly();
+            syncUninterruptibly(future);
             nodeConnections.put(addr, connection);
         } catch (RedisConnectionException e) {
             log.warn(e.getMessage(), e);

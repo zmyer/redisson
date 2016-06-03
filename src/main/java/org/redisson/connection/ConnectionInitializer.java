@@ -15,14 +15,14 @@
  */
 package org.redisson.connection;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.redisson.MasterSlaveServersConfig;
 import org.redisson.client.RedisConnection;
 import org.redisson.core.NodeType;
 
-import io.netty.util.concurrent.Promise;
-
 public interface ConnectionInitializer {
 
-    <T extends RedisConnection> void onConnect(Promise<T> connectionFuture, T conn, NodeType nodeType, MasterSlaveServersConfig config);
+    <T extends RedisConnection> void onConnect(CompletableFuture<T> connectionFuture, T conn, NodeType nodeType, MasterSlaveServersConfig config);
 
 }

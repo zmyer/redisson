@@ -34,10 +34,6 @@ import org.redisson.core.NodeType;
 import org.redisson.core.NodesGroup;
 import org.redisson.core.RFuture;
 
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
-
 public class RedisNodes<N extends Node> implements NodesGroup<N> {
 
     private final ConnectionManager connectionManager;
@@ -72,15 +68,13 @@ public class RedisNodes<N extends Node> implements NodesGroup<N> {
         for (RedisClientEntry entry : clients) {
             RFuture<RedisConnection> f = entry.getClient().connectAsync();
             f.thenAccept(c -> {
-                Promise<RedisConnection> connectionFuture = connectionManager.newPromise();
+                RedissonFuture<RedisConnection> connectionFuture = connectionManager.newPromise();
                 connectionManager.getConnectListener().onConnect(connectionFuture, c, null, connectionManager.getConfig());
-                connectionFuture.addListener(new FutureListener<RedisConnection>() {
-                    @Override
-                    public void operationComplete(Future<RedisConnection> future) throws Exception {
-                        RFuture<String> r = c.async(RedisCommands.PING);
-                        result.put(c, r);
-                        latch.countDown();
-                    }
+                connectionFuture.handle((r, cause) -> {
+                    RFuture<String> future = c.async(RedisCommands.PING);
+                    result.put(c, future);
+                    latch.countDown();
+                    return null;
                 });
             }).exceptionally(cause -> {
                 latch.countDown();

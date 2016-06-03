@@ -216,7 +216,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return connectListener;
     }
 
-    protected <V> V syncUninterruptibly(RFuture<V> future) {
+    public <V> V syncUninterruptibly(RFuture<V> future) {
         try {
             return future.join();
         } catch (CompletionException e) {
