@@ -21,16 +21,61 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Result of asynchronous operation
+ * 
+ * @author Nikita Koksharov
+ *
+ * @param <T>
+ */
 public interface RFuture<T> extends Future<T>, CompletionStage<T> {
 
+    /**
+     * Returns {@code true} if and only if the I/O operation was completed
+     * successfully.
+     */
     boolean isSuccess();
-    
+
+    /**
+     * Returns the cause of the failed I/O operation if the I/O operation has
+     * failed.
+     *
+     * @return the cause of the failure.
+     *         {@code null} if succeeded or this future is not
+     *         completed yet.
+     */
     Throwable cause();
     
+    /**
+     * Returns the result value (or throws any encountered exception)
+     * if completed, else returns the given valueIfAbsent.
+     *
+     * @param valueIfAbsent the value to return if not completed
+     * @return the result value, if completed, else the given valueIfAbsent
+     * @throws CancellationException if the computation was cancelled
+     * @throws CompletionException if this future completed
+     * exceptionally or a completion computation threw an exception
+     */
     T getNow(T valueIfAbsent);
  
+    /**
+     * Return the result without blocking. If the future is not done yet this will return {@code null}.
+     *
+     * As it is possible that a {@code null} value is used to mark the future as successful you also need to check
+     * if the future is really done with {@link #isDone()} and not relay on the returned {@code null} value.
+     */
     T getNow();
  
+    /**
+     * Waits for this future to be completed within the
+     * specified time limit.
+     *
+     * @return {@code true} if and only if the future was completed within
+     *         the specified time limit
+     *
+     * @throws InterruptedException
+     *         if the current thread was interrupted
+     */
     boolean await(long timeout, TimeUnit unit) throws InterruptedException;
 
     /**
