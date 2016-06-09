@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.redisson.api.RedissonReactiveClient;
 import org.redisson.client.codec.Codec;
@@ -76,7 +77,6 @@ import org.redisson.core.RSortedSet;
 import org.redisson.core.RTopic;
 
 import io.netty.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Main infrastructure class allows to get access
@@ -400,6 +400,16 @@ public class Redisson implements RedissonClient {
     @Override
     public RRemoteService getRemoteSerivce(String name) {
         return new RedissonRemoteService(this, name);
+    }
+    
+    @Override
+    public RRemoteService getRemoteSerivce(Codec codec) {
+        return new RedissonRemoteService(codec, this);
+    }
+    
+    @Override
+    public RRemoteService getRemoteSerivce(String name, Codec codec) {
+        return new RedissonRemoteService(codec, this, name);
     }
 
     @Override

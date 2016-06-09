@@ -27,6 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.core.RBatch;
 import org.redisson.core.RBlockingQueue;
@@ -64,6 +65,7 @@ public class RedissonRemoteService implements RRemoteService {
     
     private final Map<RemoteServiceKey, RemoteServiceMethod> beans = PlatformDependent.newConcurrentHashMap();
     
+    private final Codec codec;
     private final Redisson redisson;
     private final String name;
     
@@ -72,6 +74,15 @@ public class RedissonRemoteService implements RRemoteService {
     }
 
     public RedissonRemoteService(Redisson redisson, String name) {
+        this(null, redisson, name);
+    }
+    
+    public RedissonRemoteService(Codec codec, Redisson redisson) {
+        this(codec, redisson, "redisson_remote_service");
+    }
+
+    public RedissonRemoteService(Codec codec, Redisson redisson, String name) {
+        this.codec = codec;
         this.redisson = redisson;
         this.name = name;
     }
@@ -96,14 +107,21 @@ public class RedissonRemoteService implements RRemoteService {
         
         for (int i = 0; i < executorsAmount; i++) {
             String requestQueueName = name + ":{" + remoteInterface.getName() + "}";
-            RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName);
+            RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName, getCodec());
             subscribe(remoteInterface, requestQueue);
         }
+    }
+    
+    private Codec getCodec() {
+        if (codec != null) {
+            return codec;
+        }
+        return redisson.getConfig().getCodec();
     }
 
     private byte[] encode(Object obj) {
         try {
-            return redisson.getConfig().getCodec().getValueEncoder().encode(obj);
+            return getCodec().getValueEncoder().encode(obj);
         } catch (IOException e) {
             throw new IllegalArgumentException(e);
         }
@@ -167,7 +185,7 @@ public class RedissonRemoteService implements RRemoteService {
             return null;
         });
     }
-
+    
     private <T> void invokeMethod(final Class<T> remoteInterface, final RBlockingQueue<RemoteServiceRequest> requestQueue, final RemoteServiceRequest request, RemoteServiceMethod method, String responseName) {
         final AtomicReference<RemoteServiceResponse> responseHolder = new AtomicReference<RemoteServiceResponse>();
         try {
@@ -264,7 +282,7 @@ public class RedissonRemoteService implements RRemoteService {
                 final Promise<Object> result = ImmediateEventExecutor.INSTANCE.newPromise();
 
                 String requestQueueName = name + ":{" + interfaceName + "}";
-                RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName);
+                RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName, getCodec());
                 final RemoteServiceRequest request = new RemoteServiceRequest(requestId,
                         method.getName(), args, optionsCopy, System.currentTimeMillis());
                 RFuture<Boolean> addFuture = requestQueue.addAsync(request);
@@ -272,7 +290,7 @@ public class RedissonRemoteService implements RRemoteService {
                     final RBlockingQueue<? extends RRemoteServiceResponse> responseQueue;
                     if (optionsCopy.isAckExpected() || optionsCopy.isResultExpected()) {
                         String responseName = name + ":{" + interfaceName + "}:" + requestId;
-                        responseQueue = redisson.getBlockingQueue(responseName);
+                        responseQueue = redisson.getBlockingQueue(responseName, getCodec());
                     } else {
                         responseQueue = null;
                     }
@@ -367,7 +385,7 @@ public class RedissonRemoteService implements RRemoteService {
                 String requestId = generateRequestId();
 
                 String requestQueueName = name + ":{" + interfaceName + "}";
-                RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName);
+                RBlockingQueue<RemoteServiceRequest> requestQueue = redisson.getBlockingQueue(requestQueueName, getCodec());
                 RemoteServiceRequest request = new RemoteServiceRequest(requestId,
                         method.getName(), args, optionsCopy, System.currentTimeMillis());
                 requestQueue.add(request);
@@ -375,7 +393,7 @@ public class RedissonRemoteService implements RRemoteService {
                 RBlockingQueue<RRemoteServiceResponse> responseQueue = null;
                 if (optionsCopy.isAckExpected() || optionsCopy.isResultExpected()) {
                     String responseName = name + ":{" + interfaceName + "}:" + requestId;
-                    responseQueue = redisson.getBlockingQueue(responseName);
+                    responseQueue = redisson.getBlockingQueue(responseName, getCodec());
                 }
 
                 // poll for the ack only if expected

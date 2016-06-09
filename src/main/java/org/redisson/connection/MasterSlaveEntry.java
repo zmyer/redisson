@@ -180,20 +180,28 @@ public class MasterSlaveEntry {
         }
     }
 
-    private void reattachPubSubListeners(String channelName, Collection<RedisPubSubListener> listeners) {
-        Codec subscribeCodec = connectionManager.unsubscribe(channelName);
-        if (!listeners.isEmpty()) {
-            RFuture<PubSubConnectionEntry> future = connectionManager.subscribe(subscribeCodec, channelName, null);
-            future.thenAccept(newEntry -> {
-                for (RedisPubSubListener redisPubSubListener : listeners) {
-                    newEntry.addListener(channelName, redisPubSubListener);
+    private void reattachPubSubListeners(final String channelName, final Collection<RedisPubSubListener> listeners) {
+        Future<Codec> unsubscribeFuture = connectionManager.unsubscribe(channelName);
+        unsubscribeFuture.addListener(new FutureListener<Codec>() {
+            @Override
+            public void operationComplete(Future<Codec> future) throws Exception {
+                if (listeners.isEmpty()) {
+                    return;
                 }
-                log.debug("listeners resubscribed to '{}' channel", channelName);
-            }).exceptionally(cause -> {
-                log.error("Can't resubscribe listeners to topic channel: " + channelName, cause);
-                return null;
-            });
-        }
+                
+                Codec subscribeCodec = future.getNow();
+                RFuture<PubSubConnectionEntry> subscribeFuture = connectionManager.subscribe(subscribeCodec, channelName, null);
+                subscribeFuture.thenAccept(newEntry -> {
+                    for (RedisPubSubListener redisPubSubListener : listeners) {
+                        newEntry.addListener(channelName, redisPubSubListener);
+                    }
+                    log.debug("listeners resubscribed to '{}' channel", channelName);
+                }).exceptionally(cause -> {
+                    log.error("Can't resubscribe listeners to topic channel: " + channelName, cause);
+                    return null;
+                });
+            }
+        });
     }
 
     private void reattachPatternPubSubListeners(final String channelName,
