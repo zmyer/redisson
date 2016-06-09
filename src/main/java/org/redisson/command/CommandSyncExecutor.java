@@ -18,7 +18,6 @@ package org.redisson.command;
 import java.net.InetSocketAddress;
 import java.util.List;
 
-import org.redisson.SyncOperation;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.connection.ConnectionManager;
@@ -39,10 +38,6 @@ public interface CommandSyncExecutor {
     <T, R> R write(String key, RedisCommand<T> command, Object ... params);
 
     <T, R> R read(String key, RedisCommand<T> command, Object ... params);
-
-    <R> R read(String key, Codec codec, SyncOperation<R> operation);
-
-    <R> R write(String key, Codec codec, SyncOperation<R> operation);
 
     <T, R> R read(String key, Codec codec, RedisCommand<T> command, Object ... params);
 

@@ -465,8 +465,8 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
             return null;
         }
 
-        Promise<Codec> result = newPromise();
-        Codec entryCodec = entry.getConnection().getChannels().get(channelName);
+        final Promise<Codec> result = newPromise();
+        final Codec entryCodec = entry.getConnection().getChannels().get(channelName);
         entry.unsubscribe(channelName, new BaseRedisPubSubListener() {
 
             @Override
