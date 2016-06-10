@@ -39,8 +39,6 @@ import org.redisson.core.RFuture;
 import org.redisson.core.RKeys;
 import org.redisson.misc.CompositeIterable;
 
-import io.netty.util.concurrent.Promise;
-
 public class RedissonKeys implements RKeys {
 
     private final CommandAsyncExecutor commandExecutor;
@@ -276,18 +274,18 @@ public class RedissonKeys implements RKeys {
         return commandExecutor.writeAllAsync(RedisCommands.FLUSHALL);
     }
 
-    private void checkExecution(final Promise<Long> result, final AtomicReference<Throwable> failed,
+    private void checkExecution(final RedissonFuture<Long> result, final AtomicReference<Throwable> failed,
             final AtomicLong count, final AtomicLong executed) {
         if (executed.decrementAndGet() == 0) {
             if (failed.get() != null) {
                 if (count.get() > 0) {
                     RedisException ex = new RedisException("" + count.get() + " keys has been deleted. But one or more nodes has an error", failed.get());
-                    result.setFailure(ex);
+                    result.completeExceptionally(ex);
                 } else {
-                    result.setFailure(failed.get());
+                    result.completeExceptionally(failed.get());
                 }
             } else {
-                result.setSuccess(count.get());
+                result.complete(count.get());
             }
         }
     }

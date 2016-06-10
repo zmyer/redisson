@@ -79,9 +79,9 @@ public class RedissonTopicReactive<M> implements RTopicReactive<M> {
     private Publisher<Integer> addListener(final RedisPubSubListener<M> pubSubListener) {
         final RedissonFuture<Integer> promise = commandExecutor.getConnectionManager().newPromise();
         RFuture<PubSubConnectionEntry> future = commandExecutor.getConnectionManager().subscribe(codec, name, pubSubListener);
-        future.thenAccept(r -> promise.setSuccess(System.identityHashCode(pubSubListener)))
+        future.thenAccept(r -> promise.complete(System.identityHashCode(pubSubListener)))
         .exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             return null;
         });
         return new NettyFuturePublisher<Integer>(promise);

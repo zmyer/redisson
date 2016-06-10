@@ -96,7 +96,7 @@ public interface ConnectionManager {
 
     RFuture<PubSubConnectionEntry> psubscribe(String pattern, Codec codec);
 
-    Future<Codec> unsubscribe(String channelName);
+    RFuture<Codec> unsubscribe(String channelName);
 
     Codec punsubscribe(String channelName);
 

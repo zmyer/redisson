@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisAskException;
 import org.redisson.client.RedisException;
 import org.redisson.client.RedisLoadingException;
@@ -50,7 +51,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ReplayingDecoder;
 import io.netty.util.CharsetUtil;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.PlatformDependent;
 
 /**
@@ -186,13 +186,13 @@ public class CommandDecoder extends ReplayingDecoder<State> {
         }
 
         if (i == commandBatch.getCommands().size()) {
-            Promise<Void> promise = commandBatch.getPromise();
+            RedissonFuture<Void> promise = commandBatch.getPromise();
             if (error != null) {
-                if (!promise.tryFailure(error) && promise.cause() instanceof RedisTimeoutException) {
+                if (!promise.completeExceptionally(error) && promise.cause() instanceof RedisTimeoutException) {
                     log.warn("response has been skipped due to timeout! channel: {}, command: {}", ctx.channel(), data);
                 }
             } else {
-                if (!promise.trySuccess(null) && promise.cause() instanceof RedisTimeoutException) {
+                if (!promise.complete(null) && promise.cause() instanceof RedisTimeoutException) {
                     log.warn("response has been skipped due to timeout! channel: {}, command: {}", ctx.channel(), data);
                 }
             }
@@ -345,7 +345,7 @@ public class CommandDecoder extends ReplayingDecoder<State> {
         if (parts != null) {
             parts.add(result);
         } else {
-            if (!data.getPromise().trySuccess(result) && data.cause() instanceof RedisTimeoutException) {
+            if (!data.getPromise().complete(result) && data.cause() instanceof RedisTimeoutException) {
                 log.warn("response has been skipped due to timeout! channel: {}, command: {}, result: {}", channel, data, result);
             }
         }

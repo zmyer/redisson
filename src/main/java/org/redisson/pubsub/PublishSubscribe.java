@@ -38,7 +38,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
                 // just an assertion
                 boolean removed = entries.remove(entryName) == entry;
                 if (removed) {
-                    connectionManager.unsubscribe(channelName).syncUninterruptibly();
+                    connectionManager.unsubscribe(channelName).join();
                 }
             }
         }
@@ -95,7 +95,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
                 }
 
                 if (type == PubSubType.SUBSCRIBE) {
-                    value.getPromise().trySuccess(value);
+                    value.getPromise().complete(value);
                     return true;
                 }
                 return false;

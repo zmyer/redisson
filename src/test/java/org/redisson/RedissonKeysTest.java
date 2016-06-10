@@ -2,18 +2,43 @@ package org.redisson;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.redisson.client.codec.StringCodec;
 import org.redisson.core.RBucket;
 import org.redisson.core.RMap;
 
 public class RedissonKeysTest extends BaseTest {
 
+    @Test
+    public void qetKeysByPatternShouldFetchAllMathcingKeys() {
+        final StringCodec stringCodec = new StringCodec();
+        final int keysCount = 10000;
+        final String keyGroup1 = "group1";
+        for (long key = 1; key <= keysCount / 2; key++) {
+            redisson.getBucket(keyGroup1 + ":key:" + key, stringCodec).set(String.valueOf(key));
+        }
+        final String keyGroup2 = "group2";
+        for (long key = keysCount / 2 + 1; key < keysCount; key++) {
+            redisson.getBucket(keyGroup2 + ":key:" + key, stringCodec).set(String.valueOf(key));
+        }
+        List<String> foundKeys = new ArrayList<>();
+        for (String key : redisson.getKeys().getKeysByPattern(keyGroup1 + "*")) {
+            foundKeys.add(key);
+        }
+        Assert.assertEquals(keysCount / 2, foundKeys.size());
+        for (long key = 1; key <= keysCount / 2; key++) {
+            Assert.assertTrue(foundKeys.contains(keyGroup1 + ":key:" + key));
+        }
+    }
+    
     @Test
     public void testKeysIterablePattern() {
         redisson.getBucket("test1").set("someValue");

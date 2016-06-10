@@ -311,11 +311,11 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return promise;
     }
 
-    private void psubscribe(final String channelName, final Codec codec, final Promise<PubSubConnectionEntry> promise) {
+    private void psubscribe(final String channelName, final Codec codec, final RedissonFuture<PubSubConnectionEntry> promise) {
         // multiple channel names per PubSubConnections are allowed
         PubSubConnectionEntry сonnEntry = name2PubSubConnection.get(channelName);
         if (сonnEntry != null) {
-            promise.setSuccess(сonnEntry);
+            promise.complete(сonnEntry);
             return;
         }
 
@@ -325,7 +325,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                 PubSubConnectionEntry oldEntry = name2PubSubConnection.putIfAbsent(channelName, entry);
                 if (oldEntry != null) {
                     entry.release();
-                    promise.setSuccess(oldEntry);
+                    promise.complete(oldEntry);
                     return;
                 }
 
@@ -336,7 +336,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                         return;
                     }
                     entry.psubscribe(codec, channelName);
-                    promise.setSuccess(entry);
+                    promise.complete(entry);
                     return;
                 }
             }
@@ -350,7 +350,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
             PubSubConnectionEntry oldEntry = name2PubSubConnection.putIfAbsent(channelName, entry);
             if (oldEntry != null) {
                 releaseSubscribeConnection(slot, entry);
-                promise.setSuccess(oldEntry);
+                promise.complete(oldEntry);
                 return;
             }
 
@@ -361,10 +361,10 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                     return;
                 }
                 entry.psubscribe(codec, channelName);
-                promise.setSuccess(entry);
+                promise.complete(entry);
             }
         }).exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             return null;
         });
     }
@@ -375,13 +375,13 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return promise;
     }
 
-    private void subscribe(final Codec codec, final String channelName, final RedisPubSubListener<?> listener, final Promise<PubSubConnectionEntry> promise) {
+    private void subscribe(final Codec codec, final String channelName, final RedisPubSubListener<?> listener, final RedissonFuture<PubSubConnectionEntry> promise) {
         PubSubConnectionEntry сonnEntry = name2PubSubConnection.get(channelName);
         if (сonnEntry != null) {
             synchronized (сonnEntry) {
                 if (сonnEntry.isActive()) {
                     сonnEntry.addListener(channelName, listener);
-                    promise.setSuccess(сonnEntry);
+                    promise.complete(сonnEntry);
                     return;
                 }
             }
@@ -398,7 +398,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                     synchronized (oldEntry) {
                         if (oldEntry.isActive()) {
                             oldEntry.addListener(channelName, listener);
-                            promise.setSuccess(oldEntry);
+                            promise.complete(oldEntry);
                             return;
                         }
                     }
@@ -412,7 +412,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                         return;
                     }
                     entry.subscribe(codec, listener, channelName);
-                    promise.setSuccess(entry);
+                    promise.complete(entry);
                     return;
                 }
             }
@@ -422,7 +422,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     }
 
     private void connect(final Codec codec, final String channelName, final RedisPubSubListener<?> listener,
-            final Promise<PubSubConnectionEntry> promise) {
+            final RedissonFuture<PubSubConnectionEntry> promise) {
         final int slot = 0;
         RFuture<RedisPubSubConnection> connFuture = nextPubSubConnection(slot);
         connFuture.thenAccept(conn -> {
@@ -435,7 +435,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                 synchronized (oldEntry) {
                     if (oldEntry.isActive()) {
                         oldEntry.addListener(channelName, listener);
-                        promise.setSuccess(oldEntry);
+                        promise.complete(oldEntry);
                         return;
                     }
                 }
@@ -449,23 +449,23 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                     return;
                 }
                 entry.subscribe(codec, listener, channelName);
-                promise.setSuccess(entry);
+                promise.complete(entry);
                 return;
             }
         }).exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             return null;
         });
     }
 
     @Override
-    public Future<Codec> unsubscribe(final String channelName) {
+    public RFuture<Codec> unsubscribe(final String channelName) {
         final PubSubConnectionEntry entry = name2PubSubConnection.remove(channelName);
         if (entry == null) {
             return null;
         }
 
-        final Promise<Codec> result = newPromise();
+        final RedissonFuture<Codec> result = newPromise();
         final Codec entryCodec = entry.getConnection().getChannels().get(channelName);
         entry.unsubscribe(channelName, new BaseRedisPubSubListener() {
 
@@ -477,7 +477,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
                             releaseSubscribeConnection(0, entry);
                         }
                     }
-                    result.setSuccess(entryCodec);
+                    result.complete(entryCodec);
                     return true;
                 }
                 return false;
@@ -645,14 +645,14 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     @Override
     public <R> RFuture<R> newSucceededFuture(R value) {
         RedissonFuture<R> result = new RedissonFuture<>();
-        result.setSuccess(value);
+        result.complete(value);
         return result;
     }
 
     @Override
     public <R> RFuture<R> newFailedFuture(Throwable cause) {
         RedissonFuture<R> result = new RedissonFuture<>();
-        result.setFailure(cause);
+        result.completeExceptionally(cause);
         return result;
     }
 

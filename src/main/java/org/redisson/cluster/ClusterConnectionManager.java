@@ -136,17 +136,17 @@ public class ClusterConnectionManager extends MasterSlaveConnectionManager {
             promise.thenAccept(conn -> {
                 if (conn.isActive()) {
                     nodeConnections.put(addr, conn);
-                    result.setSuccess(conn);
+                    result.complete(conn);
                 } else {
                     conn.closeAsync();
-                    result.setFailure(new RedisException("Connection to " + conn.getRedisClient().getAddr() + " is not active!"));
+                    result.completeExceptionally(new RedisException("Connection to " + conn.getRedisClient().getAddr() + " is not active!"));
                 }
             }).exceptionally(cause -> {
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
 
@@ -179,7 +179,7 @@ public class ClusterConnectionManager extends MasterSlaveConnectionManager {
                     RedisException e = new RedisException("Failed to add master: " +
                             partition.getMasterAddress() + " for slot ranges: " +
                             partition.getSlotRanges() + ". Reason - cluster_state:fail");
-                    result.setFailure(e);
+                    result.completeExceptionally(e);
                     return;
                 }
 
@@ -215,14 +215,14 @@ public class ClusterConnectionManager extends MasterSlaveConnectionManager {
                     log.info("master: {} added for slot ranges: {}", partition.getMasterAddress(), partition.getSlotRanges());
                 });
                 futures.add(f);
-                result.setSuccess(futures);
+                result.complete(futures);
             }).exceptionally(cause -> {
                 log.error("Can't execute CLUSTER_INFO for " + connection.getRedisClient().getAddr(), cause);
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
 

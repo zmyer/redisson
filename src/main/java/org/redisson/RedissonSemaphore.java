@@ -18,6 +18,7 @@ package org.redisson;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,7 +32,6 @@ import org.redisson.core.RFuture;
 import org.redisson.core.RSemaphore;
 import org.redisson.pubsub.SemaphorePubSub;
 
-import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 
 /**
@@ -102,7 +102,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
         RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
         tryAcquireFuture.thenAccept(res -> {
             if (res) {
-                result.setSuccess(null);
+                result.complete(null);
                 return;
             }
             
@@ -110,28 +110,28 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
             subscribeFuture.thenAccept(r -> {
                 acquireAsync(permits, subscribeFuture, result);
             }).exceptionally(cause -> {
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
         return result;
     }
     
-    private void tryAcquireAsync(final AtomicLong time, final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Boolean> result) {
+    private void tryAcquireAsync(final AtomicLong time, final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final CompletableFuture<Boolean> result) {
         RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
         tryAcquireFuture.thenAccept(res -> {
             if (res) {
                 unsubscribe(subscribeFuture);
-                result.trySuccess(true);
+                result.complete(true);
                 return;
             }
             
             if (time.get() < 0) {
                 unsubscribe(subscribeFuture);
-                result.trySuccess(false);
+                result.complete(false);
                 return;
             }
 
@@ -180,17 +180,17 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
             }
         }).exceptionally(cause -> {
             unsubscribe(subscribeFuture);
-            result.tryFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
     }
     
-    private void acquireAsync(final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Void> result) {
+    private void acquireAsync(final int permits, final RFuture<RedissonLockEntry> subscribeFuture, final CompletableFuture<Void> result) {
         RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
         tryAcquireFuture.thenAccept(r -> {
             if (r) {
                 unsubscribe(subscribeFuture);
-                result.setSuccess(null);
+                result.complete(null);
                 return;
             }
             
@@ -210,7 +210,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
             }
         }).exceptionally(cause -> {
             unsubscribe(subscribeFuture);
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
     }
@@ -294,7 +294,7 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
         RFuture<Boolean> tryAcquireFuture = tryAcquireAsync(permits);
         tryAcquireFuture.thenAccept(res -> {
             if (res) {
-                result.setSuccess(true);
+                result.complete(true);
                 return;
             }
             
@@ -311,13 +311,13 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
                 
                 if (time.get() < 0) {
                     unsubscribe(subscribeFuture);
-                    result.trySuccess(false);
+                    result.complete(false);
                     return;
                 }
 
                 tryAcquireAsync(time, permits, subscribeFuture, result);
             }).exceptionally(cause -> {
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
             
@@ -326,14 +326,14 @@ public class RedissonSemaphore extends RedissonExpirable implements RSemaphore {
                     @Override
                     public void run() {
                         if (!subscribeFuture.isDone()) {
-                            result.trySuccess(false);
+                            result.complete(false);
                         }
                     }
                 }, time.get(), TimeUnit.MILLISECONDS);
                 futureRef.set(scheduledFuture);
             }
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
         

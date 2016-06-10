@@ -19,24 +19,23 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import org.redisson.RedissonFuture;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.decoder.MultiDecoder;
 
-import io.netty.util.concurrent.Promise;
-
 public class CommandData<T, R> implements QueueCommand {
 
-    final Promise<R> promise;
+    final RedissonFuture<R> promise;
     final RedisCommand<T> command;
     final Object[] params;
     final Codec codec;
     final MultiDecoder<Object> messageDecoder;
 
-    public CommandData(Promise<R> promise, Codec codec, RedisCommand<T> command, Object[] params) {
+    public CommandData(RedissonFuture<R> promise, Codec codec, RedisCommand<T> command, Object[] params) {
         this(promise, null, codec, command, params);
     }
 
-    public CommandData(Promise<R> promise, MultiDecoder<Object> messageDecoder, Codec codec, RedisCommand<T> command, Object[] params) {
+    public CommandData(RedissonFuture<R> promise, MultiDecoder<Object> messageDecoder, Codec codec, RedisCommand<T> command, Object[] params) {
         this.promise = promise;
         this.command = command;
         this.params = params;
@@ -56,7 +55,7 @@ public class CommandData<T, R> implements QueueCommand {
         return messageDecoder;
     }
 
-    public Promise<R> getPromise() {
+    public RedissonFuture<R> getPromise() {
         return promise;
     }
     
@@ -69,7 +68,7 @@ public class CommandData<T, R> implements QueueCommand {
     }
 
     public boolean tryFailure(Throwable cause) {
-        return promise.tryFailure(cause);
+        return promise.completeExceptionally(cause);
     }
 
     public Codec getCodec() {

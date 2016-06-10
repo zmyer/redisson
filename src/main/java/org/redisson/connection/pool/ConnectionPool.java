@@ -40,7 +40,6 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
 
 abstract class ConnectionPool<T extends RedisConnection> {
 
@@ -70,11 +69,11 @@ abstract class ConnectionPool<T extends RedisConnection> {
         return promise;
     }
 
-    private void initConnections(final ClientConnectionsEntry entry, final Promise<Void> initPromise, boolean checkFreezed) {
+    private void initConnections(final ClientConnectionsEntry entry, final RedissonFuture<Void> initPromise, boolean checkFreezed) {
         final int minimumIdleSize = getMinimumIdleSize(entry);
 
         if (minimumIdleSize == 0 || (checkFreezed && entry.isFreezed())) {
-            initPromise.setSuccess(null);
+            initPromise.complete(null);
             return;
         }
 
@@ -86,14 +85,14 @@ abstract class ConnectionPool<T extends RedisConnection> {
         }
     }
 
-    private void createConnection(final boolean checkFreezed, final AtomicInteger requests, final ClientConnectionsEntry entry, final Promise<Void> initPromise,
+    private void createConnection(final boolean checkFreezed, final AtomicInteger requests, final ClientConnectionsEntry entry, final RedissonFuture<Void> initPromise,
             final int minimumIdleSize, final AtomicInteger initializedConnections) {
 
         if ((checkFreezed && entry.isFreezed()) || !tryAcquireConnection(entry)) {
             Throwable cause = new RedisConnectionException(
                     "Can't init enough connections amount! Only " + (minimumIdleSize - initializedConnections.get()) + " from " + minimumIdleSize + " were initialized. Server: "
                                         + entry.getClient().getAddr());
-            initPromise.tryFailure(cause);
+            initPromise.completeExceptionally(cause);
             return;
         }
 
@@ -105,7 +104,7 @@ abstract class ConnectionPool<T extends RedisConnection> {
             int value = initializedConnections.decrementAndGet();
             if (value == 0) {
                 log.info("{} connections initialized for {}", minimumIdleSize, entry.getClient().getAddr());
-                initPromise.setSuccess(null);
+                initPromise.complete(null);
             } else if (value > 0 && !initPromise.isDone()) {
                 if (requests.incrementAndGet() <= minimumIdleSize) {
                     createConnection(checkFreezed, requests, entry, initPromise, minimumIdleSize, initializedConnections);
@@ -117,7 +116,7 @@ abstract class ConnectionPool<T extends RedisConnection> {
             Throwable ex = new RedisConnectionException(
                     "Can't init enough connections amount! Only " + (minimumIdleSize - initializedConnections.get()) + " from " + minimumIdleSize + " were initialized. Server: "
                                         + entry.getClient().getAddr(), cause);
-            initPromise.tryFailure(ex);
+            initPromise.completeExceptionally(ex);
             return null;
         });
     }
@@ -218,9 +217,9 @@ abstract class ConnectionPool<T extends RedisConnection> {
         return promise;
     }
 
-    private void promiseSuccessful(ClientConnectionsEntry entry, Promise<T> promise, T conn) {
+    private void promiseSuccessful(ClientConnectionsEntry entry, RedissonFuture<T> promise, T conn) {
         entry.resetFailedAttempts();
-        if (!promise.trySuccess(conn)) {
+        if (!promise.complete(conn)) {
             releaseConnection(entry, conn);
             releaseConnection(entry);
         }
@@ -231,15 +230,15 @@ abstract class ConnectionPool<T extends RedisConnection> {
         return (RFuture<T>) conn.getAcquireFuture();
     }
 
-    private void promiseFailure(ClientConnectionsEntry entry, Promise<T> promise, Throwable cause) {
+    private void promiseFailure(ClientConnectionsEntry entry, RedissonFuture<T> promise, Throwable cause) {
         if (entry.incFailedAttempts() == config.getFailedAttempts()) {
             checkForReconnect(entry);
         }
 
-        promise.tryFailure(cause);
+        promise.completeExceptionally(cause);
     }
 
-    private void promiseFailure(ClientConnectionsEntry entry, Promise<T> promise, T conn) {
+    private void promiseFailure(ClientConnectionsEntry entry, RedissonFuture<T> promise, T conn) {
         int attempts = entry.incFailedAttempts();
         if (attempts == config.getFailedAttempts()) {
             checkForReconnect(entry);
@@ -250,7 +249,7 @@ abstract class ConnectionPool<T extends RedisConnection> {
         releaseConnection(entry);
 
         RedisConnectionException cause = new RedisConnectionException(conn + " is not active!");
-        promise.tryFailure(cause);
+        promise.completeExceptionally(cause);
     }
 
     private RFuture<T> promiseFailure(ClientConnectionsEntry entry, T conn) {
@@ -325,7 +324,7 @@ abstract class ConnectionPool<T extends RedisConnection> {
 
                                     if (future.isSuccess() && "PONG".equals(future.getNow())) {
                                         entry.resetFailedAttempts();
-                                        Promise<Void> promise = connectionManager.newPromise();
+                                        RedissonFuture<Void> promise = connectionManager.newPromise();
                                         promise.addListener(new FutureListener<Void>() {
                                             @Override
                                             public void operationComplete(Future<Void> future)

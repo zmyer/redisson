@@ -17,17 +17,16 @@ package org.redisson.client.protocol;
 
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.redisson.RedissonFuture;
 import org.redisson.client.RedisRedirectException;
 import org.redisson.client.codec.Codec;
-
-import io.netty.util.concurrent.Promise;
 
 public class BatchCommandData<T, R> extends CommandData<T, R> implements Comparable<BatchCommandData<T, R>> {
 
     private final int index;
     private final AtomicReference<RedisRedirectException> redirectError = new AtomicReference<RedisRedirectException>();
     
-    public BatchCommandData(Promise<R> promise, Codec codec, RedisCommand<T> command, Object[] params, int index) {
+    public BatchCommandData(RedissonFuture<R> promise, Codec codec, RedisCommand<T> command, Object[] params, int index) {
         super(promise, codec, command, params);
         this.index = index;
     }

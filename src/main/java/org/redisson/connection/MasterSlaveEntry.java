@@ -181,7 +181,7 @@ public class MasterSlaveEntry {
     }
 
     private void reattachPubSubListeners(final String channelName, final Collection<RedisPubSubListener> listeners) {
-        Future<Codec> unsubscribeFuture = connectionManager.unsubscribe(channelName);
+        RFuture<Codec> unsubscribeFuture = connectionManager.unsubscribe(channelName);
         unsubscribeFuture.addListener(new FutureListener<Codec>() {
             @Override
             public void operationComplete(Future<Codec> future) throws Exception {

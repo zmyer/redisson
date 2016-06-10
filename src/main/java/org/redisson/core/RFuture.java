@@ -21,6 +21,8 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import io.netty.util.concurrent.GenericFutureListener;
+
 /**
  * Result of asynchronous operation
  * 
@@ -79,6 +81,18 @@ public interface RFuture<T> extends Future<T>, CompletionStage<T> {
     boolean await(long timeout, TimeUnit unit) throws InterruptedException;
 
     /**
+     * Waits for this future to be completed within the
+     * specified time limit.
+     *
+     * @return {@code true} if and only if the future was completed within
+     *         the specified time limit
+     *
+     * @throws InterruptedException
+     *         if the current thread was interrupted
+     */
+    boolean await(long timeoutMillis) throws InterruptedException;
+    
+    /**
      * Returns the result value when complete, or throws an
      * (unchecked) exception if completed exceptionally. To better
      * conform with the use of common functional forms, if a
@@ -93,5 +107,47 @@ public interface RFuture<T> extends Future<T>, CompletionStage<T> {
      * exceptionally or a completion computation threw an exception
      */
     T join();
+
+    /**
+     * Use {@link #thenApply} or {@link #exceptionally} or {@link #handle} methods instead
+     */
+    @Deprecated
+    io.netty.util.concurrent.Future<T> addListener(GenericFutureListener<? extends io.netty.util.concurrent.Future<? super T>> listener);
+
+    /**
+     * Use {@link #thenApply} or {@link #exceptionally} or {@link #handle} methods instead
+     */
+    @Deprecated
+    io.netty.util.concurrent.Future<T> addListeners(GenericFutureListener<? extends io.netty.util.concurrent.Future<? super T>>... listeners);
+
+    @Deprecated
+    io.netty.util.concurrent.Future<T> removeListener(GenericFutureListener<? extends io.netty.util.concurrent.Future<? super T>> listener);
+
+    @Deprecated
+    io.netty.util.concurrent.Future<T> removeListeners(GenericFutureListener<? extends io.netty.util.concurrent.Future<? super T>>... listeners);
+
+    @Deprecated
+    boolean isCancellable();
     
+    @Deprecated
+    io.netty.util.concurrent.Future<T> sync() throws InterruptedException;
+
+    /**
+     * Use {@link #join()} method instead
+     */
+    @Deprecated
+    io.netty.util.concurrent.Future<T> syncUninterruptibly();
+
+    @Deprecated
+    io.netty.util.concurrent.Future<T> await() throws InterruptedException;
+
+    @Deprecated
+    io.netty.util.concurrent.Future<T> awaitUninterruptibly();
+    
+    @Deprecated
+    boolean awaitUninterruptibly(long timeout, TimeUnit unit);
+
+    @Deprecated
+    boolean awaitUninterruptibly(long timeoutMillis);
+
 }

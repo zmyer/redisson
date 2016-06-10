@@ -33,12 +33,11 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandExecutor;
 import org.redisson.core.RBucket;
+import org.redisson.core.RFuture;
 import org.redisson.core.RLock;
 import org.redisson.core.RSortedSet;
 
 import io.netty.channel.EventLoopGroup;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.Promise;
 
 /**
  *
@@ -271,15 +270,15 @@ public class RedissonSortedSet<V> extends RedissonObject implements RSortedSet<V
         }
     }
 
-    public Future<Boolean> addAsync(final V value) {
-        final Promise<Boolean> promise = newPromise();
+    public RFuture<Boolean> addAsync(final V value) {
+        final RedissonFuture<Boolean> promise = newPromise();
         commandExecutor.getConnectionManager().getGroup().execute(new Runnable() {
             public void run() {
                 try {
                     boolean res = add(value);
-                    promise.setSuccess(res);
+                    promise.complete(res);
                 } catch (Exception e) {
-                    promise.setFailure(e);
+                    promise.completeExceptionally(e);
                 }
             }
         });
@@ -287,18 +286,18 @@ public class RedissonSortedSet<V> extends RedissonObject implements RSortedSet<V
     }
 
     @Override
-    public Future<Boolean> removeAsync(final V value) {
+    public RFuture<Boolean> removeAsync(final V value) {
         EventLoopGroup group = commandExecutor.getConnectionManager().getGroup();
-        final Promise<Boolean> promise = group.next().newPromise();
+        final RedissonFuture<Boolean> promise = newPromise();
 
         group.execute(new Runnable() {
             @Override
             public void run() {
                 try {
                     boolean result = remove(value);
-                    promise.setSuccess(result);
+                    promise.complete(result);
                 } catch (Exception e) {
-                    promise.setFailure(e);
+                    promise.completeExceptionally(e);
                 }
             }
         });

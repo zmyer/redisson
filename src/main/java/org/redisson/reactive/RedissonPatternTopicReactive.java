@@ -75,13 +75,13 @@ public class RedissonPatternTopicReactive<M> implements RPatternTopicReactive<M>
             synchronized (entry) {
                 if (entry.isActive()) {
                     entry.addListener(name, pubSubListener);
-                    promise.setSuccess(pubSubListener.hashCode());
+                    promise.complete(pubSubListener.hashCode());
                     return;
                 }
             }
             addListener(pubSubListener, promise);
         }).exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             return null;
         });
     }

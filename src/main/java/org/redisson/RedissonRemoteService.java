@@ -454,16 +454,16 @@ public class RedissonRemoteService implements RRemoteService {
         ackClientsFuture.thenAccept(r -> {
             if (r) {
                 RFuture<RemoteServiceAck> pollFuture = (RFuture<RemoteServiceAck>) responseQueue.pollAsync();
-                pollFuture.thenAccept(res -> promise.setSuccess(res))
+                pollFuture.thenAccept(res -> promise.complete(res))
                 .exceptionally(cause -> {
-                    promise.setFailure(cause);
+                    promise.completeExceptionally(cause);
                     return null;
                 });
             } else {
-                promise.setSuccess(null);
+                promise.complete(null);
             }
         }).exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             return null;
         });
         

@@ -104,9 +104,9 @@ public class RedisClient {
             public void operationComplete(ChannelFuture future) throws Exception {
                 if (future.isSuccess()) {
                     RedisConnection c = new RedisConnection(RedisClient.this, future.channel());
-                    f.setSuccess(c);
+                    f.complete(c);
                 } else {
-                    f.setFailure(future.cause());
+                    f.completeExceptionally(future.cause());
                 }
             }
         });
@@ -131,9 +131,9 @@ public class RedisClient {
             public void operationComplete(ChannelFuture future) throws Exception {
                 if (future.isSuccess()) {
                     RedisPubSubConnection c = new RedisPubSubConnection(RedisClient.this, future.channel());
-                    f.setSuccess(c);
+                    f.complete(c);
                 } else {
-                    f.setFailure(future.cause());
+                    f.completeExceptionally(future.cause());
                 }
             }
         });

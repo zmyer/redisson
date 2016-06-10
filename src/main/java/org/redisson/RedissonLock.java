@@ -37,7 +37,6 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 import io.netty.util.internal.PlatformDependent;
 
@@ -414,15 +413,15 @@ public class RedissonLock extends RedissonExpirable implements RLock {
             if (opStatus == null) {
                 IllegalMonitorStateException cause = new IllegalMonitorStateException("attempt to unlock lock, not locked by current thread by node id: "
                         + id + " thread-id: " + threadId);
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return;
             }
             if (opStatus) {
                 cancelExpirationRenewal();
             }
-            result.setSuccess(null);
+            result.complete(null);
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
 
@@ -444,7 +443,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
         ttlFuture.thenAccept(ttl -> {
             // lock acquired
             if (ttl == null) {
-                result.setSuccess(null);
+                result.complete(null);
                 return;
             }
 
@@ -452,11 +451,11 @@ public class RedissonLock extends RedissonExpirable implements RLock {
             subscribeFuture.thenAccept(r -> {
                 lockAsync(leaseTime, unit, subscribeFuture, result, currentThreadId);
             }).exceptionally(cause -> {
-                result.setFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
 
@@ -464,13 +463,13 @@ public class RedissonLock extends RedissonExpirable implements RLock {
     }
 
     private void lockAsync(final long leaseTime, final TimeUnit unit,
-            final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Void> result, final long currentThreadId) {
+            final RFuture<RedissonLockEntry> subscribeFuture, final RedissonFuture<Void> result, final long currentThreadId) {
         RFuture<Long> ttlFuture = tryAcquireAsync(leaseTime, unit, currentThreadId);
         ttlFuture.thenAccept(ttl -> {
             // lock acquired
             if (ttl == null) {
                 unsubscribe(subscribeFuture, currentThreadId);
-                result.setSuccess(null);
+                result.complete(null);
                 return;
             }
 
@@ -510,7 +509,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
             }
         }).exceptionally(cause -> {
             unsubscribe(subscribeFuture, currentThreadId);
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
     }
@@ -541,7 +540,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
         ttlFuture.thenAccept(ttl -> {
             // lock acquired
             if (ttl == null) {
-                result.setSuccess(true);
+                result.complete(true);
                 return;
             }
 
@@ -558,13 +557,13 @@ public class RedissonLock extends RedissonExpirable implements RLock {
                 
                 if (time.get() < 0) {
                     unsubscribe(subscribeFuture, currentThreadId);
-                    result.trySuccess(false);
+                    result.complete(false);
                     return;
                 }
 
                 tryLockAsync(time, leaseTime, unit, subscribeFuture, result, currentThreadId);
             }).exceptionally(cause -> {
-                result.tryFailure(cause);
+                result.completeExceptionally(cause);
                 return null;
             });
             if (!subscribeFuture.isDone()) {
@@ -572,14 +571,14 @@ public class RedissonLock extends RedissonExpirable implements RLock {
                     @Override
                     public void run() {
                         if (!subscribeFuture.isDone()) {
-                            result.trySuccess(false);
+                            result.complete(false);
                         }
                     }
                 }, time.get(), TimeUnit.MILLISECONDS);
                 futureRef.set(scheduledFuture);
             }
         }).exceptionally(cause -> {
-            result.setFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
 
@@ -587,19 +586,19 @@ public class RedissonLock extends RedissonExpirable implements RLock {
     }
 
     private void tryLockAsync(final AtomicLong time, final long leaseTime, final TimeUnit unit,
-            final RFuture<RedissonLockEntry> subscribeFuture, final Promise<Boolean> result, final long currentThreadId) {
+            final RFuture<RedissonLockEntry> subscribeFuture, final RedissonFuture<Boolean> result, final long currentThreadId) {
         RFuture<Long> ttlFuture = tryAcquireAsync(leaseTime, unit, currentThreadId);
         ttlFuture.thenAccept(ttl -> {
             // lock acquired
             if (ttl == null) {
                 unsubscribe(subscribeFuture, currentThreadId);
-                result.trySuccess(true);
+                result.complete(true);
                 return;
             }
             
             if (time.get() < 0) {
                 unsubscribe(subscribeFuture, currentThreadId);
-                result.trySuccess(false);
+                result.complete(false);
                 return;
             }
 
@@ -651,7 +650,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
             }
         }).exceptionally(cause -> {
             unsubscribe(subscribeFuture, currentThreadId);
-            result.tryFailure(cause);
+            result.completeExceptionally(cause);
             return null;
         });
     }

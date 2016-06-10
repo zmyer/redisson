@@ -48,7 +48,6 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.PlatformDependent;
 
 public class CommandBatchService extends CommandReactiveService {
@@ -161,10 +160,10 @@ public class CommandBatchService extends CommandReactiveService {
             for (BatchCommandData<?, ?> commandEntry : entries) {
                 result.add(commandEntry.getPromise().getNow());
             }
-            promise.setSuccess(result);
+            promise.complete(result);
             commands = null;
         }).exceptionally(cause -> {
-            promise.setFailure(cause);
+            promise.completeExceptionally(cause);
             commands = null;
             return null;
         });
@@ -182,7 +181,7 @@ public class CommandBatchService extends CommandReactiveService {
         }
 
         if (!connectionManager.getShutdownLatch().acquire()) {
-            mainPromise.setFailure(new IllegalStateException("Redisson is shutdown"));
+            mainPromise.completeExceptionally(new IllegalStateException("Redisson is shutdown"));
             return;
         }
 
@@ -224,7 +223,7 @@ public class CommandBatchService extends CommandReactiveService {
                     if (details.getException() == null) {
                         details.setException(new RedisTimeoutException("Batch command execution timeout"));
                     }
-                    attemptPromise.tryFailure(details.getException());
+                    attemptPromise.completeExceptionally(details.getException());
                     return;
                 }
                 if (!attemptPromise.cancel(false)) {
@@ -276,16 +275,16 @@ public class CommandBatchService extends CommandReactiveService {
 
                 if (future.isSuccess()) {
                     if (slots.decrementAndGet() == 0) {
-                        mainPromise.setSuccess(future.getNow());
+                        mainPromise.complete(future.getNow());
                     }
                 } else {
-                    mainPromise.setFailure(future.cause());
+                    mainPromise.completeExceptionally(future.cause());
                 }
             }
         });
     }
 
-    private void checkWriteFuture(final Promise<Void> attemptPromise, AsyncDetails details,
+    private void checkWriteFuture(final RedissonFuture<Void> attemptPromise, AsyncDetails details,
             final RedisConnection connection, ChannelFuture future) {
         if (attemptPromise.isDone() || future.isCancelled()) {
             return;
@@ -298,7 +297,7 @@ public class CommandBatchService extends CommandReactiveService {
             TimerTask timeoutTask = new TimerTask() {
                 @Override
                 public void run(Timeout timeout) throws Exception {
-                    attemptPromise.tryFailure(
+                    attemptPromise.completeExceptionally(
                             new RedisTimeoutException("Redis server response timeout during command batch execution. Channel: " + connection.getChannel()));
                 }
             };
@@ -324,7 +323,7 @@ public class CommandBatchService extends CommandReactiveService {
 
         List<CommandData<?, ?>> list = new ArrayList<CommandData<?, ?>>(entry.getCommands().size() + 1);
         if (source.getRedirect() == Redirect.ASK) {
-            Promise<Void> promise = connectionManager.newPromise();
+            RedissonFuture<Void> promise = connectionManager.newPromise();
             list.add(new CommandData<Void, Void>(promise, StringCodec.INSTANCE, RedisCommands.ASKING, new Object[] {}));
         } 
         for (BatchCommandData<?, ?> c : entry.getCommands()) {

@@ -59,7 +59,6 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 
 /**
@@ -118,10 +117,10 @@ public class CommandAsyncService implements CommandAsyncExecutor {
 
             if (counter.decrementAndGet() == 0
                   && !mainPromise.isDone()) {
-                mainPromise.setSuccess(results);
+                mainPromise.complete(results);
             }
         }).exceptionally(cause -> {
-            mainPromise.setFailure(cause);
+            mainPromise.completeExceptionally(cause);
             return null;
         });
         
@@ -147,15 +146,15 @@ public class CommandAsyncService implements CommandAsyncExecutor {
         attemptPromise.thenAccept(result -> {
             if (result == null) {
                 if (slots.isEmpty()) {
-                    mainPromise.setSuccess(null);
+                    mainPromise.complete(null);
                 } else {
                     retryReadRandomAsync(command, mainPromise, slots, params);
                 }
             } else {
-                mainPromise.setSuccess(result);
+                mainPromise.complete(result);
             }
         }).exceptionally(cause -> {
-            mainPromise.setFailure(cause);
+            mainPromise.completeExceptionally(cause);
             return null;
         });
 
@@ -189,13 +188,13 @@ public class CommandAsyncService implements CommandAsyncExecutor {
             }
             if (counter.decrementAndGet() == 0) {
                 if (callback != null) {
-                    mainPromise.setSuccess(callback.onFinish());
+                    mainPromise.complete(callback.onFinish());
                 } else {
-                    mainPromise.setSuccess(null);
+                    mainPromise.complete(null);
                 }
             }
         }).exceptionally(cause -> {
-            mainPromise.setFailure(cause);
+            mainPromise.completeExceptionally(cause);
             return null;
         });
         
@@ -286,10 +285,10 @@ public class CommandAsyncService implements CommandAsyncExecutor {
             callback.onSlotResult(result);
             if (counter.decrementAndGet() == 0
                   && !mainPromise.isDone()) {
-                mainPromise.setSuccess(callback.onFinish());
+                mainPromise.complete(callback.onFinish());
             }
         }).exceptionally(cause -> {
-            mainPromise.setFailure(cause);
+            mainPromise.completeExceptionally(cause);
             return null;
         });
 
@@ -335,7 +334,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
         }
 
         if (!connectionManager.getShutdownLatch().acquire()) {
-            mainPromise.setFailure(new RedissonShutdownException("Redisson is shutdown"));
+            mainPromise.completeExceptionally(new RedissonShutdownException("Redisson is shutdown"));
             return;
         }
 
@@ -382,7 +381,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
                     if (details.getException() == null) {
                         details.setException(new RedisTimeoutException("Command execution timeout for command: " + command + " with params: " + Arrays.toString(details.getParams())));
                     }
-                    details.getAttemptPromise().tryFailure(details.getException());
+                    details.getAttemptPromise().completeExceptionally(details.getException());
                     return;
                 }
                 if (!details.getAttemptPromise().cancel(false)) {
@@ -449,7 +448,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
         TimerTask timeoutTask = new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
-                details.getAttemptPromise().tryFailure(
+                details.getAttemptPromise().completeExceptionally(
                         new RedisTimeoutException("Redis server response timeout (" + timeoutAmount + " ms) occured for command: " + details.getCommand()
                                 + " with params: " + Arrays.toString(details.getParams()) + " channel: " + connection.getChannel()));
             }
@@ -463,7 +462,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
         final FutureListener<Boolean> listener = new FutureListener<Boolean>() {
             @Override
             public void operationComplete(Future<Boolean> future) throws Exception {
-                details.getMainPromise().tryFailure(new RedissonShutdownException("Redisson is shutdown"));
+                details.getMainPromise().completeExceptionally(new RedissonShutdownException("Redisson is shutdown"));
             }
         };
         
@@ -483,7 +482,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
                     }
                     
                     canceledByScheduler.set(true);
-                    details.getAttemptPromise().trySuccess(null);
+                    details.getAttemptPromise().complete(null);
                 }
             }, popTimeout, TimeUnit.SECONDS);
         } else {
@@ -507,7 +506,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
             }
             
             if (cause instanceof RedissonShutdownException) {
-                details.getAttemptPromise().tryFailure(cause);
+                details.getAttemptPromise().completeExceptionally(cause);
             }
             return null;
         });
@@ -544,10 +543,10 @@ public class CommandAsyncService implements CommandAsyncExecutor {
 
         if (details.getSource().getRedirect() == Redirect.ASK) {
             List<CommandData<?, ?>> list = new ArrayList<CommandData<?, ?>>(2);
-            Promise<Void> promise = connectionManager.newPromise();
+            RedissonFuture<Void> promise = connectionManager.newPromise();
             list.add(new CommandData<Void, Void>(promise, details.getCodec(), RedisCommands.ASKING, new Object[] {}));
             list.add(new CommandData<V, R>(details.getAttemptPromise(), details.getCodec(), details.getCommand(), details.getParams()));
-            Promise<Void> main = connectionManager.newPromise();
+            RedissonFuture<Void> main = connectionManager.newPromise();
             ChannelFuture future = connection.send(new CommandsData(main, list));
             details.setWriteFuture(future);
         } else {
@@ -605,7 +604,7 @@ public class CommandAsyncService implements CommandAsyncExecutor {
     }
 
     private <R, V> void checkAttemptFuture(final NodeSource source, final AsyncDetails<V, R> details,
-            Future<R> future) {
+            RedissonFuture<R> future) {
         details.getTimeout().cancel();
         if (future.isCancelled()) {
             return;
@@ -643,9 +642,9 @@ public class CommandAsyncService implements CommandAsyncExecutor {
                 }
                 ((RedisClientResult)res).setRedisClient(addr);
             }
-            details.getMainPromise().setSuccess(res);
+            details.getMainPromise().complete(res);
         } else {
-            details.getMainPromise().tryFailure(future.cause());
+            details.getMainPromise().completeExceptionally(future.cause());
         }
         AsyncDetails.release(details);
     }

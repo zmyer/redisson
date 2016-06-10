@@ -168,7 +168,7 @@ public class RedisConnection implements RedisCommands {
             @Override
             public void run() {
                 RedisTimeoutException ex = new RedisTimeoutException("Command execution timeout for " + redisClient.getAddr());
-                promise.tryFailure(ex);
+                promise.completeExceptionally(ex);
             }
         }, redisClient.getTimeout(), TimeUnit.MILLISECONDS);
         promise.handle((r, cause) -> {
@@ -180,7 +180,7 @@ public class RedisConnection implements RedisCommands {
     }
 
     public <T, R> CommandData<T, R> create(Codec encoder, RedisCommand<T> command, Object ... params) {
-        Promise<R> promise = ImmediateEventExecutor.INSTANCE.newPromise();
+        RedissonFuture<R> promise = new RedissonFuture<>();
         return new CommandData<T, R>(promise, encoder, command, params);
     }
 

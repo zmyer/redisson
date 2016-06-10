@@ -32,9 +32,8 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
-import io.netty.util.concurrent.Promise;
 
-public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T>, Promise<T> {
+public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T>, Future<T> {
 
     private Set<GenericFutureListener> allListeners;
     
@@ -108,28 +107,6 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
 
     @Override
-    public Promise<T> setSuccess(T result) {
-        complete(result);
-        return this;
-    }
-
-    @Override
-    public boolean trySuccess(T result) {
-        return complete(result);
-    }
-
-    @Override
-    public Promise<T> setFailure(Throwable cause) {
-        completeExceptionally(cause);
-        return this;
-    }
-
-    @Override
-    public boolean tryFailure(Throwable cause) {
-        return completeExceptionally(cause);
-    }
-
-    @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
         synchronized (this) {
             if (uncancellable) {
@@ -140,23 +117,8 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
     
     @Override
-    public boolean setUncancellable() {
-        if (isDone()) {
-            return false;
-        }
-
-        synchronized (this) {
-            if (isDone()) {
-                return false;
-            }
-            uncancellable = true;
-            return true;
-        }
-    }
-
-    @Override
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    public Promise<T> addListener(GenericFutureListener listener) {
+    public Future<T> addListener(GenericFutureListener listener) {
         createListeners();
         allListeners.add(listener);
         
@@ -177,7 +139,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
 
     @Override
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    public Promise<T> addListeners(GenericFutureListener... listeners) {
+    public Future<T> addListeners(GenericFutureListener<? extends Future<? super T>>... listeners) {
         createListeners();
         allListeners.addAll(Arrays.asList(listeners));
 
@@ -208,8 +170,8 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
         }
     }
 
-    @Override
-    public Promise<T> removeListener(GenericFutureListener<? extends Future<? super T>> listener) {
+    
+    public Future<T> removeListener(GenericFutureListener<? extends Future<? super T>> listener) {
         if (allListeners == null) {
             return this;
         }
@@ -218,8 +180,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
         return this;
     }
 
-    @Override
-    public Promise<T> removeListeners(GenericFutureListener<? extends Future<? super T>>... listeners) {
+    public Future<T> removeListeners(GenericFutureListener<? extends Future<? super T>>... listeners) {
         if (allListeners == null) {
             return this;
         }
@@ -229,7 +190,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
 
     @Override
-    public Promise<T> await() throws InterruptedException {
+    public Future<T> await() throws InterruptedException {
         try {
             get();
         } catch (ExecutionException e) {
@@ -239,7 +200,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
 
     @Override
-    public Promise<T> awaitUninterruptibly() {
+    public Future<T> awaitUninterruptibly() {
         try {
             join();
         } catch (CancellationException | CompletionException e) {
@@ -249,7 +210,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
 
     @Override
-    public Promise<T> sync() throws InterruptedException {
+    public Future<T> sync() throws InterruptedException {
         try {
             get();
         } catch (ExecutionException e) {
@@ -262,7 +223,7 @@ public class RedissonFuture<T> extends CompletableFuture<T> implements RFuture<T
     }
 
     @Override
-    public Promise<T> syncUninterruptibly() {
+    public Future<T> syncUninterruptibly() {
         join();
         return this;
     }
