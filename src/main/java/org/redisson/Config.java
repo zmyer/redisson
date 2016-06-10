@@ -111,23 +111,13 @@ public class Config {
      * @return
      */
     public ClusterServersConfig useClusterServers() {
-        return useClusterServers(new ClusterServersConfig());
-    }
-
-    /**
-     * Init cluster servers configuration by config object.
-     *
-     * @return
-     */
-    @Deprecated
-    public ClusterServersConfig useClusterServers(ClusterServersConfig config) {
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
         checkSingleServerConfig();
         checkElasticacheServersConfig();
 
         if (clusterServersConfig == null) {
-            clusterServersConfig = config;
+            clusterServersConfig = new ClusterServersConfig();
         }
         return clusterServersConfig;
     }
@@ -146,16 +136,6 @@ public class Config {
      * @return
      */
     public ElasticacheServersConfig useElasticacheServers() {
-        return useElasticacheServers(new ElasticacheServersConfig());
-    }
-
-    /**
-     * Init AWS Elasticache servers configuration by config object.
-     *
-     * @return
-     */
-    @Deprecated
-    public ElasticacheServersConfig useElasticacheServers(ElasticacheServersConfig config) {
         checkClusterServersConfig();
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
@@ -181,23 +161,13 @@ public class Config {
      * @return
      */
     public SingleServerConfig useSingleServer() {
-        return useSingleServer(new SingleServerConfig());
-    }
-
-    /**
-     * Init single server configuration by config object.
-     *
-     * @return
-     */
-    @Deprecated
-    public SingleServerConfig useSingleServer(SingleServerConfig config) {
         checkClusterServersConfig();
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
         checkElasticacheServersConfig();
 
         if (singleServerConfig == null) {
-            singleServerConfig = config;
+            singleServerConfig = new SingleServerConfig();
         }
         return singleServerConfig;
     }

@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +42,6 @@ import org.redisson.client.protocol.decoder.MapScanResult;
 import org.redisson.client.protocol.decoder.ScanObjectEntry;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.connection.decoder.MapGetAllDecoder;
-import org.redisson.core.Predicate;
 import org.redisson.core.RFuture;
 import org.redisson.core.RMap;
 
@@ -356,13 +354,11 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return get(f);
     }
 
-    @Override
-    public Iterator<Map.Entry<K, V>> entryIterator() {
+    private Iterator<Map.Entry<K, V>> entryIterator() {
         return new RedissonMapIterator<K, V, Map.Entry<K, V>>(this);
     }
 
-    @Override
-    public Iterator<V> valueIterator() {
+    private Iterator<V> valueIterator() {
         return new RedissonMapIterator<K, V, V>(this) {
             @Override
             V getValue(java.util.Map.Entry<ScanObjectEntry, ScanObjectEntry> entry) {
@@ -371,51 +367,13 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         };
     }
 
-    @Override
-    public Iterator<K> keyIterator() {
+    private Iterator<K> keyIterator() {
         return new RedissonMapIterator<K, V, K>(this) {
             @Override
             K getValue(java.util.Map.Entry<ScanObjectEntry, ScanObjectEntry> entry) {
                 return (K) entry.getKey().getObj();
             }
         };
-    }
-
-
-    @Override
-    public Map<K, V> filterKeys(Predicate<K> predicate) {
-        Map<K, V> result = new HashMap<K, V>();
-        for (Iterator<Map.Entry<K, V>> iterator = entryIterator(); iterator.hasNext();) {
-            Map.Entry<K, V> entry = iterator.next();
-            if (predicate.apply(entry.getKey())) {
-                result.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return result;
-    }
-
-    @Override
-    public Map<K, V> filterValues(Predicate<V> predicate) {
-        Map<K, V> result = new HashMap<K, V>();
-        for (Iterator<Map.Entry<K, V>> iterator = entryIterator(); iterator.hasNext();) {
-            Map.Entry<K, V> entry = iterator.next();
-            if (predicate.apply(entry.getValue())) {
-                result.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return result;
-    }
-
-    @Override
-    public Map<K, V> filterEntries(Predicate<Map.Entry<K, V>> predicate) {
-        Map<K, V> result = new HashMap<K, V>();
-        for (Iterator<Map.Entry<K, V>> iterator = entryIterator(); iterator.hasNext();) {
-            Map.Entry<K, V> entry = iterator.next();
-            if (predicate.apply(entry)) {
-                result.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return result;
     }
 
     @Override
