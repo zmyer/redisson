@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import java.lang.ref.WeakReference;
  *
  * @param <V> value type
  */
-public class CachedValueWeakReference<V> extends WeakReference<V> {
+public class CachedValueWeakReference<V> extends WeakReference<V> implements CachedValueReference {
 
     private final CachedValue<?, ?> owner;
     
@@ -33,6 +33,7 @@ public class CachedValueWeakReference<V> extends WeakReference<V> {
         this.owner = owner;
     }
     
+    @Override
     public CachedValue<?, ?> getOwner() {
         return owner;
     }

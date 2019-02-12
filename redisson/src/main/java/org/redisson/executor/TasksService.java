@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.codec.CompositeCodec;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.executor.params.TaskParameters;
 import org.redisson.misc.RPromise;
 import org.redisson.misc.RedissonPromise;
 import org.redisson.remote.RemoteServiceCancelRequest;
@@ -125,7 +126,9 @@ public class TasksService extends BaseRemoteService {
     }
     
     protected RFuture<Boolean> addAsync(String requestQueueName, RemoteServiceRequest request) {
-        request.getArgs()[3] = request.getId();
+        TaskParameters params = (TaskParameters) request.getArgs()[0];
+        params.setRequestId(request.getId());
+
         long retryStartTime = 0;
         if (tasksRetryInterval > 0) {
             retryStartTime = System.currentTimeMillis() + tasksRetryInterval;
@@ -164,8 +167,9 @@ public class TasksService extends BaseRemoteService {
                // remove from executor queue
               + "if task ~= false and redis.call('exists', KEYS[3]) == 1 and redis.call('lrem', KEYS[1], 1, ARGV[1]) > 0 then "
                   + "if redis.call('decr', KEYS[3]) == 0 then "
-                     + "redis.call('del', KEYS[3], KEYS[7]);"
+                     + "redis.call('del', KEYS[3]);"
                      + "if redis.call('get', KEYS[4]) == ARGV[2] then "
+                        + "redis.call('del', KEYS[7]);"
                         + "redis.call('set', KEYS[4], ARGV[3]);"
                         + "redis.call('publish', KEYS[5], ARGV[3]);"
                      + "end;"

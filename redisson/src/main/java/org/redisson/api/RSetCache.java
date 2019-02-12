@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.redisson.api;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.redisson.api.mapreduce.RCollectionMapReduce;
 
@@ -38,20 +39,108 @@ import org.redisson.api.mapreduce.RCollectionMapReduce;
  *
  * @param <V> value
  */
-public interface RSetCache<V> extends Set<V>, RExpirable, RSetCacheAsync<V> {
+public interface RSetCache<V> extends Set<V>, RExpirable, RSetCacheAsync<V>, RDestroyable {
 
+    /**
+     * Returns <code>RCountDownLatch</code> instance associated with <code>value</code>
+     * 
+     * @param value - set value
+     * @return RCountDownLatch object
+     */
+    RCountDownLatch getCountDownLatch(V value);
+    
+    /**
+     * Returns <code>RPermitExpirableSemaphore</code> instance associated with <code>value</code>
+     * 
+     * @param value - set value
+     * @return RPermitExpirableSemaphore object
+     */
+    RPermitExpirableSemaphore getPermitExpirableSemaphore(V value);
+
+    /**
+     * Returns <code>RSemaphore</code> instance associated with <code>value</code>
+     * 
+     * @param value - set value
+     * @return RSemaphore object
+     */
+    RSemaphore getSemaphore(V value);
+    
+    /**
+     * Returns <code>RLock</code> instance associated with <code>value</code>
+     * 
+     * @param value - set value
+     * @return RLock object
+     */
+    RLock getFairLock(V value);
+    
+    /**
+     * Returns <code>RReadWriteLock</code> instance associated with <code>value</code>
+     * 
+     * @param value - set value
+     * @return RReadWriteLock object
+     */
+    RReadWriteLock getReadWriteLock(V value);
+    
     /**
      * Returns lock instance associated with <code>value</code>
      * 
      * @param value - set value
-     * @return lock
+     * @return RLock object
      */
     RLock getLock(V value);
     
     /**
+     * Returns stream of elements in this set.
+     * Elements are loaded in batch. Batch size is defined by <code>count</code> param. 
+     * 
+     * @param count - size of elements batch
+     * @return stream of elements
+     */
+    Stream<V> stream(int count);
+    
+    /**
+     * Returns stream of elements in this set.
+     * Elements are loaded in batch. Batch size is defined by <code>count</code> param.
+     * If pattern is not null then only elements match this pattern are loaded.
+     * 
+     * @param pattern - search pattern
+     * @param count - size of elements batch
+     * @return stream of elements
+     */
+    Stream<V> stream(String pattern, int count);
+    
+    /**
+     * Returns stream of elements in this set matches <code>pattern</code>. 
+     * 
+     * @param pattern - search pattern
+     * @return stream of elements
+     */
+    Stream<V> stream(String pattern);
+    
+    /**
+     * Returns an iterator over elements in this set.
+     * Elements are loaded in batch. Batch size is defined by <code>count</code> param. 
+     * 
+     * @param count - size of elements batch
+     * @return iterator
+     */
+    Iterator<V> iterator(int count);
+    
+    /**
+     * Returns an iterator over elements in this set.
+     * Elements are loaded in batch. Batch size is defined by <code>count</code> param.
+     * If pattern is not null then only elements match this pattern are loaded.
+     * 
+     * @param pattern - search pattern
+     * @param count - size of elements batch
+     * @return iterator
+     */
+    Iterator<V> iterator(String pattern, int count);
+
+    /**
      * Returns values iterator matches <code>pattern</code>. 
      * 
-     * @param pattern for values
+     * @param pattern - search pattern
      * @return iterator
      */
     Iterator<V> iterator(String pattern);

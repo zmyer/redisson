@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,18 @@ import org.redisson.api.RFuture;
 import org.redisson.client.RedisClientConfig;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.codec.StringCodec;
+import org.redisson.client.protocol.CommandData;
 import org.redisson.client.protocol.RedisCommands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.FutureListener;
 
 /**
  * 
@@ -37,6 +42,8 @@ import io.netty.util.TimerTask;
 @Sharable
 public class PingConnectionHandler extends ChannelInboundHandlerAdapter {
 
+    private static final Logger log = LoggerFactory.getLogger(PingConnectionHandler.class);
+    
     private final RedisClientConfig config;
 
     public PingConnectionHandler(RedisClientConfig config) {
@@ -44,20 +51,31 @@ public class PingConnectionHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        sendPing(ctx);
+    public void channelActive(final ChannelHandlerContext ctx) throws Exception {
+        RedisConnection connection = RedisConnection.getFrom(ctx.channel());
+        connection.getConnectionPromise().addListener(new FutureListener<RedisConnection>() {
+            @Override
+            public void operationComplete(Future<RedisConnection> future) throws Exception {
+                if (future.isSuccess()) {
+                    sendPing(ctx);
+                }
+            }
+        });
         ctx.fireChannelActive();
     }
 
     protected void sendPing(final ChannelHandlerContext ctx) {
-        RedisConnection connection = RedisConnection.getFrom(ctx.channel());
+        final RedisConnection connection = RedisConnection.getFrom(ctx.channel());
         final RFuture<String> future = connection.async(StringCodec.INSTANCE, RedisCommands.PING);
         
         config.getTimer().newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
-                if (future.cancel(false) || !future.isSuccess()) {
+                CommandData<?, ?> commandData = connection.getCurrentCommand();
+                if ((commandData == null || !commandData.isBlockingCommand()) && 
+                        (future.cancel(false) || !future.isSuccess())) {
                     ctx.channel().close();
+                    log.debug("channel: {} closed due to PING response timeout set in {} ms", ctx.channel(), config.getPingConnectionInterval());
                 } else {
                     sendPing(ctx);
                 }

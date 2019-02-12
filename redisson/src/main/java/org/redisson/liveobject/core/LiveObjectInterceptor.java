@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,21 @@
 package org.redisson.liveobject.core;
 
 import java.lang.reflect.Method;
+
+import org.redisson.api.RBatch;
+import org.redisson.api.RFuture;
+import org.redisson.api.RLiveObject;
+import org.redisson.api.RMap;
+import org.redisson.api.RMultimapAsync;
+import org.redisson.api.RedissonClient;
+import org.redisson.api.annotation.RIndex;
+import org.redisson.client.RedisException;
+import org.redisson.liveobject.misc.ClassUtils;
+import org.redisson.liveobject.misc.Introspectior;
+import org.redisson.liveobject.resolver.NamingScheme;
+
+import net.bytebuddy.description.field.FieldDescription.InDefinedShape;
+import net.bytebuddy.description.field.FieldList;
 import net.bytebuddy.implementation.bind.annotation.AllArguments;
 import net.bytebuddy.implementation.bind.annotation.FieldProxy;
 import net.bytebuddy.implementation.bind.annotation.FieldValue;
@@ -23,19 +38,10 @@ import net.bytebuddy.implementation.bind.annotation.Origin;
 import net.bytebuddy.implementation.bind.annotation.RuntimeType;
 import net.bytebuddy.implementation.bind.annotation.This;
 
-import org.redisson.RedissonMap;
-import org.redisson.client.RedisException;
-import org.redisson.client.codec.Codec;
-import org.redisson.api.RMap;
-import org.redisson.api.RedissonClient;
-import org.redisson.api.annotation.REntity;
-import org.redisson.codec.ReferenceCodecProvider;
-import org.redisson.liveobject.misc.ClassUtils;
-import org.redisson.liveobject.resolver.NamingScheme;
-
 /**
  *
  * @author Rui Gu (https://github.com/jackygurui)
+ * @author Nikita Koksharov
  */
 public class LiveObjectInterceptor {
 
@@ -50,22 +56,21 @@ public class LiveObjectInterceptor {
     }
 
     private final RedissonClient redisson;
-    private final ReferenceCodecProvider codecProvider;
     private final Class<?> originalClass;
     private final String idFieldName;
     private final Class<?> idFieldType;
     private final NamingScheme namingScheme;
-    private final Class<? extends Codec> codecClass;
+    private final RedissonObjectBuilder objectBuilder;
 
-    public LiveObjectInterceptor(RedissonClient redisson, Class<?> entityClass, String idFieldName) {
+    public LiveObjectInterceptor(RedissonClient redisson, Class<?> entityClass, String idFieldName, RedissonObjectBuilder objectBuilder) {
         this.redisson = redisson;
-        this.codecProvider = redisson.getConfig().getReferenceCodecProvider();
         this.originalClass = entityClass;
         this.idFieldName = idFieldName;
-        REntity anno = (REntity) ClassUtils.getAnnotation(entityClass, REntity.class);
-        this.codecClass = anno.codec();
+        this.objectBuilder = objectBuilder;
+        
+        namingScheme = objectBuilder.getNamingScheme(entityClass);
+        
         try {
-            this.namingScheme = anno.namingScheme().getDeclaredConstructor(Codec.class).newInstance(codecProvider.getCodec(anno, originalClass));
             this.idFieldType = ClassUtils.getDeclaredField(originalClass, idFieldName).getType();
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
@@ -103,8 +108,7 @@ public class LiveObjectInterceptor {
                     //key may already renamed by others.
                 }
             }
-            RMap<Object, Object> liveMap = redisson.getMap(idKey,
-                    codecProvider.getCodec(codecClass, RedissonMap.class, idKey));
+            RMap<Object, Object> liveMap = redisson.getMap(idKey, namingScheme.getCodec());
             mapSetter.setValue(liveMap);
 
             return null;
@@ -126,7 +130,20 @@ public class LiveObjectInterceptor {
         }
         
         if ("delete".equals(method.getName())) {
-            return map.delete();
+            FieldList<InDefinedShape> fields = Introspectior.getFieldsWithAnnotation(me.getClass().getSuperclass(), RIndex.class);
+            RBatch batch = redisson.createBatch();
+            for (InDefinedShape field : fields) {
+                String fieldName = field.getName();
+                Object value = map.get(fieldName);
+                NamingScheme namingScheme = objectBuilder.getNamingScheme(me.getClass().getSuperclass());
+                String indexName = namingScheme.getIndexName(me.getClass().getSuperclass(), fieldName);
+                RMultimapAsync<Object, Object> idsMultimap = batch.getSetMultimap(indexName, namingScheme.getCodec());
+                idsMultimap.removeAsync(value, ((RLiveObject) me).getLiveObjectId());
+            }
+            RFuture<Long> deleteFuture = batch.getKeys().deleteAsync(map.getName());
+            batch.execute();
+            
+            return deleteFuture.getNow() > 0;
         }
 
         throw new NoSuchMethodException();

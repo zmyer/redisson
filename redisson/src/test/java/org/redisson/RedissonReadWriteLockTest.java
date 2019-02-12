@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,6 +31,37 @@ import org.redisson.config.Config;
 
 public class RedissonReadWriteLockTest extends BaseConcurrentTest {
 
+    @Test
+    public void testReadLockExpirationRenewal() throws InterruptedException {
+        int threadCount = 50;
+
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount/5);
+
+        AtomicInteger exceptions = new AtomicInteger();
+        for (int i=0; i<threadCount; i++) {
+            executorService.submit(()-> {
+                try {
+                    RReadWriteLock rw1 = redisson.getReadWriteLock("mytestlock");
+                    RLock readLock = rw1.readLock();
+                    readLock.lock();
+                    try {
+                        Thread.sleep(redisson.getConfig().getLockWatchdogTimeout() + 5000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    readLock.unlock();
+                } catch (Exception e) {
+                    exceptions.incrementAndGet();
+                    e.printStackTrace();
+                }
+            });
+        }
+                
+        executorService.shutdown();
+        assertThat(executorService.awaitTermination(180, TimeUnit.SECONDS)).isTrue();
+        assertThat(exceptions.get()).isZero();
+    }
+    
     @Test
     public void testName() throws InterruptedException, ExecutionException, TimeoutException {
         ExecutorService service = Executors.newFixedThreadPool(10);
@@ -200,6 +232,31 @@ public class RedissonReadWriteLockTest extends BaseConcurrentTest {
         assertThat(writeLock.isLocked()).isFalse();
     }
 
+    @Test
+    public void testWriteRead() throws InterruptedException {
+        RReadWriteLock readWriteLock = redisson.getReadWriteLock("TEST");
+        readWriteLock.writeLock().lock();
+
+        int threads = 20;
+        CountDownLatch ref = new CountDownLatch(threads);
+        for (int i = 0; i < threads; i++) {
+            Thread t1 = new Thread(() -> {
+                readWriteLock.readLock().lock();
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException e) {
+                }
+                readWriteLock.readLock().unlock();
+                ref.countDown();
+            });
+            t1.start();
+            t1.join(100);
+        }
+        
+        readWriteLock.writeLock().unlock();
+        
+        assertThat(ref.await(1, TimeUnit.SECONDS)).isTrue();
+    }
     
     @Test
     public void testWriteReadReentrancy() throws InterruptedException {
@@ -267,13 +324,13 @@ public class RedissonReadWriteLockTest extends BaseConcurrentTest {
         Assert.assertFalse(lock.writeLock().tryLock());
         Assert.assertFalse(lock.writeLock().isLocked());
         Assert.assertFalse(lock.writeLock().isHeldByCurrentThread());
-        lock.delete();
+        lock.writeLock().delete();
     }
 
     @Test
     public void testMultiRead() throws InterruptedException {
         final RReadWriteLock lock = redisson.getReadWriteLock("lock");
-        Assert.assertFalse(lock.delete());
+        Assert.assertFalse(lock.readLock().delete());
 
         final RLock readLock1 = lock.readLock();
         readLock1.lock();
@@ -317,16 +374,16 @@ public class RedissonReadWriteLockTest extends BaseConcurrentTest {
         Assert.assertFalse(lock.writeLock().isLocked());
         Assert.assertFalse(lock.writeLock().isHeldByCurrentThread());
         Assert.assertTrue(lock.writeLock().tryLock());
-        lock.delete();
+        lock.writeLock().delete();
     }
 
     @Test
     public void testDelete() {
         RReadWriteLock lock = redisson.getReadWriteLock("lock");
-        Assert.assertFalse(lock.delete());
+        Assert.assertFalse(lock.readLock().delete());
 
         lock.readLock().lock();
-        Assert.assertTrue(lock.delete());
+        Assert.assertTrue(lock.readLock().delete());
     }
 
     @Test

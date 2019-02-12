@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.api;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
- * {@link java.util.Deque} backed by Redis
+ * Reactive interface for Deque object
  *
  * @author Nikita Koksharov
  *
@@ -26,36 +27,126 @@ import org.reactivestreams.Publisher;
  */
 public interface RDequeReactive<V> extends RQueueReactive<V> {
 
-    Publisher<V> descendingIterator();
+    Flux<V> descendingIterator();
 
-    Publisher<Boolean> removeLastOccurrence(Object o);
+    /**
+     * Removes last occurrence of element <code>o</code>
+     * 
+     * @param o - element
+     * @return <code>true</code> if object has been removed otherwise <code>false</code>
+     */
+    Mono<Boolean> removeLastOccurrence(Object o);
 
-    Publisher<V> removeLast();
+    /**
+     * Retrieves and removes the last element of deque.
+     * Returns <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> removeLast();
 
-    Publisher<V> removeFirst();
+    /**
+     * Retrieves and removes the first element of deque.
+     * Returns <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> removeFirst();
 
-    Publisher<Boolean> removeFirstOccurrence(Object o);
+    /**
+     * Removes first occurrence of element <code>o</code>
+     * 
+     * @param o - element to remove
+     * @return <code>true</code> if object has been removed otherwise <code>false</code>
+     */
+    Mono<Boolean> removeFirstOccurrence(Object o);
 
-    Publisher<Void> push(V e);
+    /**
+     * Adds element at the head of this deque.
+     * 
+     * @param e - element to add
+     * @return void
+     */
+    Mono<Void> push(V e);
 
-    Publisher<V> pop();
+    /**
+     * Retrieves and removes element at the head of this deque.
+     * Returns <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> pop();
 
-    Publisher<V> pollLast();
+    /**
+     * Retrieves and removes element at the tail of this deque.
+     * Returns <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> pollLast();
 
-    Publisher<V> pollFirst();
+    /**
+     * Retrieves and removes element at the head of this deque.
+     * Returns <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> pollFirst();
 
-    Publisher<V> peekLast();
+    /**
+     * Returns element at the tail of this deque 
+     * or <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> peekLast();
 
-    Publisher<V> peekFirst();
+    /**
+     * Returns element at the head of this deque 
+     * or <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> peekFirst();
 
-    Publisher<Integer> offerLast(V e);
+    /**
+     * Adds element at the tail of this deque.
+     * 
+     * @param e - element to add
+     * @return <code>true</code> if element was added to this deque otherwise <code>false</code>
+     */
+    Mono<Boolean> offerLast(V e);
 
-    Publisher<V> getLast();
+    /**
+     * Returns element at the tail of this deque 
+     * or <code>null</code> if there are no elements in deque.
+     * 
+     * @return element
+     */
+    Mono<V> getLast();
 
-    Publisher<Void> addLast(V e);
+    /**
+     * Adds element at the tail of this deque.
+     * 
+     * @param e - element to add
+     * @return void
+     */
+    Mono<Void> addLast(V e);
 
-    Publisher<Void> addFirst(V e);
+    /**
+     * Adds element at the head of this deque.
+     * 
+     * @param e - element to add
+     * @return void
+     */
+    Mono<Void> addFirst(V e);
 
-    Publisher<Boolean> offerFirst(V e);
+    /**
+     * Adds element at the head of this deque.
+     * 
+     * @param e - element to add
+     * @return <code>true</code> if element was added to this deque otherwise <code>false</code>
+     */
+    Mono<Boolean> offerFirst(V e);
 
 }

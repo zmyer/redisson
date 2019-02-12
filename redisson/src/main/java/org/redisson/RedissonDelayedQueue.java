@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,8 +78,8 @@ public class RedissonDelayedQueue<V> extends RedissonExpirable implements RDelay
             }
             
             @Override
-            protected RTopic<Long> getTopic() {
-                return new RedissonTopic<Long>(LongCodec.INSTANCE, commandExecutor, channelName);
+            protected RTopic getTopic() {
+                return new RedissonTopic(LongCodec.INSTANCE, commandExecutor, channelName);
             }
         };
         
@@ -399,6 +399,12 @@ public class RedissonDelayedQueue<V> extends RedissonExpirable implements RDelay
     @Override
     public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, queueName, timeoutSetName);
+    }
+    
+    @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(queueName, timeoutSetName);
+        return super.sizeInMemoryAsync(keys);
     }
     
     @Override

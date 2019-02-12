@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,8 @@
  */
 package org.redisson;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.redisson.api.RBlockingQueue;
@@ -41,11 +39,11 @@ import org.redisson.connection.decoder.ListDrainToDecoder;
  */
 public class RedissonBlockingQueue<V> extends RedissonQueue<V> implements RBlockingQueue<V> {
 
-    protected RedissonBlockingQueue(CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
+    public RedissonBlockingQueue(CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(commandExecutor, name, redisson);
     }
 
-    protected RedissonBlockingQueue(Codec codec, CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
+    public RedissonBlockingQueue(Codec codec, CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(codec, commandExecutor, name, redisson);
     }
 
@@ -111,13 +109,7 @@ public class RedissonBlockingQueue<V> extends RedissonQueue<V> implements RBlock
      */
     @Override
     public RFuture<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
-        List<Object> params = new ArrayList<Object>(queueNames.length + 1);
-        params.add(getName());
-        for (Object name : queueNames) {
-            params.add(name);
-        }
-        params.add(toSeconds(timeout, unit));
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.BLPOP_VALUE, params.toArray());
+        return commandExecutor.pollFromAnyAsync(getName(), codec, RedisCommands.BLPOP_VALUE, toSeconds(timeout, unit), queueNames);
     }
 
     @Override
@@ -158,7 +150,7 @@ public class RedissonBlockingQueue<V> extends RedissonQueue<V> implements RBlock
 
         return commandExecutor.evalWriteAsync(getName(), codec, new RedisCommand<Object>("EVAL", new ListDrainToDecoder(c)),
               "local vals = redis.call('lrange', KEYS[1], 0, -1); " +
-              "redis.call('ltrim', KEYS[1], -1, 0); " +
+              "redis.call('del', KEYS[1]); " +
               "return vals", Collections.<Object>singletonList(getName()));
     }
 

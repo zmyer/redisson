@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,6 +84,8 @@ public class RedissonTransaction implements RTransaction {
     private Set<String> localCaches = new HashSet<String>();
     private final long startTime = System.currentTimeMillis();
     
+    private final String id = generateId();
+    
     public RedissonTransaction(CommandAsyncExecutor commandExecutor, TransactionOptions options) {
         super();
         this.options = options;
@@ -105,77 +107,77 @@ public class RedissonTransaction implements RTransaction {
 
         localCaches.add(fromInstance.getName());
         return new RedissonTransactionalLocalCachedMap<K, V>(commandExecutor,
-                operations, options.getTimeout(), executed, fromInstance);
+                operations, options.getTimeout(), executed, fromInstance, id);
     }
     
     @Override
     public <V> RBucket<V> getBucket(String name) {
         checkState();
         
-        return new RedissonTransactionalBucket<V>(commandExecutor, name, operations, executed);
+        return new RedissonTransactionalBucket<V>(commandExecutor, name, operations, executed, id);
     }
     
     @Override
     public <V> RBucket<V> getBucket(String name, Codec codec) {
         checkState();
 
-        return new RedissonTransactionalBucket<V>(codec, commandExecutor, name, operations, executed);
+        return new RedissonTransactionalBucket<V>(codec, commandExecutor, name, operations, executed, id);
     }
 
     @Override
     public <V> RSet<V> getSet(String name) {
         checkState();
         
-        return new RedissonTransactionalSet<V>(commandExecutor, name, operations, options.getTimeout(), executed);        
+        return new RedissonTransactionalSet<V>(commandExecutor, name, operations, options.getTimeout(), executed, id);        
     }
     
     @Override
     public <V> RSet<V> getSet(String name, Codec codec) {
         checkState();
         
-        return new RedissonTransactionalSet<V>(codec, commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalSet<V>(codec, commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
     
     @Override
     public <V> RSetCache<V> getSetCache(String name) {
         checkState();
         
-        return new RedissonTransactionalSetCache<V>(commandExecutor, name, operations, options.getTimeout(), executed);        
+        return new RedissonTransactionalSetCache<V>(commandExecutor, name, operations, options.getTimeout(), executed, id);        
     }
     
     @Override
     public <V> RSetCache<V> getSetCache(String name, Codec codec) {
         checkState();
         
-        return new RedissonTransactionalSetCache<V>(codec, commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalSetCache<V>(codec, commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
 
     @Override
     public <K, V> RMap<K, V> getMap(String name) {
         checkState();
         
-        return new RedissonTransactionalMap<K, V>(commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalMap<K, V>(commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
 
     @Override
     public <K, V> RMap<K, V> getMap(String name, Codec codec) {
         checkState();
         
-        return new RedissonTransactionalMap<K, V>(codec, commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalMap<K, V>(codec, commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
 
     @Override
     public <K, V> RMapCache<K, V> getMapCache(String name) {
         checkState();
         
-        return new RedissonTransactionalMapCache<K, V>(commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalMapCache<K, V>(commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
 
     @Override
     public <K, V> RMapCache<K, V> getMapCache(String name, Codec codec) {
         checkState();
         
-        return new RedissonTransactionalMapCache<K, V>(codec, commandExecutor, name, operations, options.getTimeout(), executed);
+        return new RedissonTransactionalMapCache<K, V>(codec, commandExecutor, name, operations, options.getTimeout(), executed, id);
     }
     
     @Override
@@ -301,7 +303,7 @@ public class RedissonTransaction implements RTransaction {
         RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
             String name = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX);
-            RTopicAsync<Object> topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
+            RTopicAsync topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
             LocalCachedMapEnable msg = new LocalCachedMapEnable(requestId, entry.getValue().getKeyIds().toArray(new byte[entry.getValue().getKeyIds().size()][]));
             topic.publishAsync(msg);
         }
@@ -317,7 +319,7 @@ public class RedissonTransaction implements RTransaction {
         RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
             String name = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX);
-            RTopicAsync<Object> topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
+            RTopicAsync topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
             LocalCachedMapEnable msg = new LocalCachedMapEnable(requestId, entry.getValue().getKeyIds().toArray(new byte[entry.getValue().getKeyIds().size()][]));
             topic.publishAsync(msg);
         }
@@ -365,14 +367,14 @@ public class RedissonTransaction implements RTransaction {
         }
         
         final CountDownLatch latch = new CountDownLatch(hashes.size());
-        List<RTopic<Object>> topics = new ArrayList<RTopic<Object>>();
+        List<RTopic> topics = new ArrayList<RTopic>();
         for (final Entry<HashKey, HashValue> entry : hashes.entrySet()) {
-            RTopic<Object> topic = new RedissonTopic<Object>(LocalCachedMessageCodec.INSTANCE, 
+            RTopic topic = new RedissonTopic(LocalCachedMessageCodec.INSTANCE, 
                     commandExecutor, RedissonObject.suffixName(entry.getKey().getName(), requestId + RedissonLocalCachedMap.DISABLED_ACK_SUFFIX));
             topics.add(topic);
-            topic.addListener(new MessageListener<Object>() {
+            topic.addListener(Object.class, new MessageListener<Object>() {
                 @Override
-                public void onMessage(String channel, Object msg) {
+                public void onMessage(CharSequence channel, Object msg) {
                     AtomicInteger counter = entry.getValue().getCounter();
                     if (counter.decrementAndGet() == 0) {
                         latch.countDown();
@@ -388,7 +390,7 @@ public class RedissonTransaction implements RTransaction {
             LocalCachedMapDisabledKey localCacheKey = new LocalCachedMapDisabledKey(requestId, options.getResponseTimeout());
             multimap.removeAllAsync(localCacheKey);
             
-            RTopicAsync<Object> topic = publishBatch.getTopic(RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX), LocalCachedMessageCodec.INSTANCE);
+            RTopicAsync topic = publishBatch.getTopic(RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX), LocalCachedMessageCodec.INSTANCE);
             RFuture<Long> future = topic.publishAsync(new LocalCachedMapDisable(requestId, 
                     entry.getValue().getKeyIds().toArray(new byte[entry.getValue().getKeyIds().size()][]), options.getResponseTimeout()));
             future.addListener(new FutureListener<Long>() {
@@ -413,7 +415,7 @@ public class RedissonTransaction implements RTransaction {
             throw new TransactionException("Unable to execute transaction over local cached map objects: " + localCaches, e);
         }
         
-        for (RTopic<Object> topic : topics) {
+        for (RTopic topic : topics) {
             topic.removeAllListeners();
         }
         
@@ -469,15 +471,15 @@ public class RedissonTransaction implements RTransaction {
                 RPromise<Void> subscriptionFuture = new RedissonPromise<Void>();
                 final CountableListener<Void> subscribedFutures = new CountableListener<Void>(subscriptionFuture, null, hashes.size());
                 
-                final List<RTopic<Object>> topics = new ArrayList<RTopic<Object>>();
+                final List<RTopic> topics = new ArrayList<RTopic>();
                 for (final Entry<HashKey, HashValue> entry : hashes.entrySet()) {
                     final String disabledAckName = RedissonObject.suffixName(entry.getKey().getName(), requestId + RedissonLocalCachedMap.DISABLED_ACK_SUFFIX);
-                    RTopic<Object> topic = new RedissonTopic<Object>(LocalCachedMessageCodec.INSTANCE, 
+                    RTopic topic = new RedissonTopic(LocalCachedMessageCodec.INSTANCE, 
                             commandExecutor, disabledAckName);
                     topics.add(topic);
-                    RFuture<Integer> topicFuture = topic.addListenerAsync(new MessageListener<Object>() {
+                    RFuture<Integer> topicFuture = topic.addListenerAsync(Object.class, new MessageListener<Object>() {
                         @Override
-                        public void onMessage(String channel, Object msg) {
+                        public void onMessage(CharSequence channel, Object msg) {
                             AtomicInteger counter = entry.getValue().getCounter();
                             if (counter.decrementAndGet() == 0) {
                                 listener.decCounter();
@@ -502,7 +504,7 @@ public class RedissonTransaction implements RTransaction {
                             LocalCachedMapDisabledKey localCacheKey = new LocalCachedMapDisabledKey(requestId, options.getResponseTimeout());
                             multimap.removeAllAsync(localCacheKey);
                             
-                            RTopicAsync<Object> topic = publishBatch.getTopic(RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX), LocalCachedMessageCodec.INSTANCE);
+                            RTopicAsync topic = publishBatch.getTopic(RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX), LocalCachedMessageCodec.INSTANCE);
                             RFuture<Long> publishFuture = topic.publishAsync(new LocalCachedMapDisable(requestId, 
                                     entry.getValue().getKeyIds().toArray(new byte[entry.getValue().getKeyIds().size()][]), options.getResponseTimeout()));
                             publishFuture.addListener(new FutureListener<Long>() {
@@ -529,7 +531,7 @@ public class RedissonTransaction implements RTransaction {
                                     @Override
                                     public void operationComplete(Future<Map<HashKey, HashValue>> future)
                                             throws Exception {
-                                        for (RTopic<Object> topic : topics) {
+                                        for (RTopic topic : topics) {
                                             topic.removeAllListeners();
                                         }
                                     }

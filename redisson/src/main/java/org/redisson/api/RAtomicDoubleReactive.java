@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,99 @@
  */
 package org.redisson.api;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
- * 
+ * Reactive interface for AtomicDouble object
+ *
  * @author Nikita Koksharov
  *
  */
 public interface RAtomicDoubleReactive extends RExpirableReactive {
 
-    Publisher<Boolean> compareAndSet(double expect, double update);
+    /**
+     * Atomically sets the value to the given updated value
+     * only if the current value {@code ==} the expected value.
+     *
+     * @param expect the expected value
+     * @param update the new value
+     * @return true if successful; or false if the actual value
+     *         was not equal to the expected value.
+     */
+    Mono<Boolean> compareAndSet(double expect, double update);
 
-    Publisher<Double> addAndGet(double delta);
+    /**
+     * Atomically adds the given value to the current value.
+     *
+     * @param delta the value to add
+     * @return the updated value
+     */
+    Mono<Double> addAndGet(double delta);
 
-    Publisher<Double> decrementAndGet();
+    /**
+     * Atomically decrements the current value by one.
+     *
+     * @return the updated value
+     */
+    Mono<Double> decrementAndGet();
 
-    Publisher<Double> get();
+    /**
+     * Returns current value.
+     *
+     * @return current value
+     */
+    Mono<Double> get();
 
-    Publisher<Double> getAndAdd(double delta);
+    /**
+     * Returns and deletes object
+     * 
+     * @return the current value
+     */
+    Mono<Double> getAndDelete();
+    
+    /**
+     * Atomically adds the given value to the current value.
+     *
+     * @param delta the value to add
+     * @return the updated value
+     */
+    Mono<Double> getAndAdd(double delta);
 
-    Publisher<Double> getAndSet(double newValue);
+    /**
+     * Atomically sets the given value and returns the old value.
+     *
+     * @param newValue the new value
+     * @return the old value
+     */
+    Mono<Double> getAndSet(double newValue);
 
-    Publisher<Double> incrementAndGet();
+    /**
+     * Atomically increments the current value by one.
+     *
+     * @return the updated value
+     */
+    Mono<Double> incrementAndGet();
 
-    Publisher<Double> getAndIncrement();
+    /**
+     * Atomically increments the current value by one.
+     *
+     * @return the old value
+     */
+    Mono<Double> getAndIncrement();
 
-    Publisher<Double> getAndDecrement();
+    /**
+     * Atomically decrements by one the current value.
+     *
+     * @return the previous value
+     */
+    Mono<Double> getAndDecrement();
 
-    Publisher<Void> set(double newValue);
+    /**
+     * Atomically sets the given value.
+     *
+     * @param newValue the new value
+     * @return void
+     */
+    Mono<Void> set(double newValue);
 
 }

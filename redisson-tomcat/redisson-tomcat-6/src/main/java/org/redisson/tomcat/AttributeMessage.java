@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,13 @@
  */
 package org.redisson.tomcat;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
+
+import org.apache.catalina.util.CustomObjectInputStream;
 
 /**
  * 
@@ -26,15 +32,40 @@ public class AttributeMessage implements Serializable {
 
     private String sessionId;
 
+    private String nodeId;
+
     public AttributeMessage() {
     }
     
-    public AttributeMessage(String sessionId) {
+    public AttributeMessage(String nodeId, String sessionId) {
+        this.nodeId = nodeId;
         this.sessionId = sessionId;
     }
-    
+
     public String getSessionId() {
         return sessionId;
     }
+
+    public String getNodeId() {
+        return nodeId;
+    }
     
+	protected byte[] toByteArray(Object value) throws IOException {
+		if (value == null) {
+			return null;
+		}
+		ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		ObjectOutputStream out = new ObjectOutputStream(bos);
+		out.writeObject(value);
+		out.flush();
+		return bos.toByteArray();
+	}
+	
+	protected Object toObject(ClassLoader classLoader, byte[] value) throws IOException, ClassNotFoundException {
+    	if (value == null) {
+    		return null;
+    	}
+    	CustomObjectInputStream in = new CustomObjectInputStream(new ByteArrayInputStream(value), classLoader);
+    	return in.readObject();		
+	}
 }

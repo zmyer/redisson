@@ -21,7 +21,10 @@ import org.redisson.api.RMap;
 import org.redisson.cache.Cache;
 import org.redisson.cache.CacheKey;
 import org.redisson.client.codec.Codec;
+import org.redisson.client.codec.DoubleCodec;
+import org.redisson.client.codec.IntegerCodec;
 import org.redisson.client.codec.StringCodec;
+import org.redisson.codec.CompositeCodec;
 
 import mockit.Deencapsulation;
 
@@ -91,28 +94,6 @@ public class RedissonLocalCachedMapTest extends BaseMapTest {
         
     }
 
-//        @Test
-    public void testPerf() {
-        LocalCachedMapOptions options = LocalCachedMapOptions.defaults().evictionPolicy(EvictionPolicy.NONE).cacheSize(100000).invalidateEntryOnChange(true);
-        Map<String, Integer> map = redisson.getLocalCachedMap("test", options);
-        
-//        Map<String, Integer> map = redisson.getMap("test");
-
-        
-        for (int i = 0; i < 10000; i++) {
-            map.put("" + i, i);
-        }
-        
-        long s = System.currentTimeMillis();
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10000; j++) {
-                map.get("" + j);
-            }
-        }
-        System.out.println(System.currentTimeMillis() - s);
-
-    }
-    
     @Override
     protected <K, V> RMap<K, V> getMap(String name) {
         return redisson.getLocalCachedMap(name, LocalCachedMapOptions.<K, V>defaults());
@@ -289,6 +270,23 @@ public class RedissonLocalCachedMapTest extends BaseMapTest {
         assertThat(cache1.size()).isEqualTo(2);
         assertThat(cache2.size()).isEqualTo(2);
     }
+
+    @Test
+    public void testLocalCacheState() throws InterruptedException {
+        LocalCachedMapOptions<String, String> options = LocalCachedMapOptions.<String, String>defaults()
+                .evictionPolicy(EvictionPolicy.LFU)
+                .cacheSize(5)
+                .syncStrategy(SyncStrategy.INVALIDATE);
+        
+        RLocalCachedMap<String, String> map = redisson.getLocalCachedMap("test", options);
+        map.put("1", "11");
+        map.put("2", "22");
+        assertThat(map.cachedKeySet()).containsExactlyInAnyOrder("1", "2");
+        assertThat(map.cachedValues()).containsExactlyInAnyOrder("11", "22");
+        assertThat(map.getCachedMap().keySet()).containsExactlyInAnyOrder("1", "2");
+        assertThat(map.getCachedMap().values()).containsExactlyInAnyOrder("11", "22");
+    }
+
     
     @Test
     public void testLocalCacheClear() throws InterruptedException {
@@ -538,7 +536,7 @@ public class RedissonLocalCachedMapTest extends BaseMapTest {
     
     @Test
     public void testAddAndGet() throws InterruptedException {
-        RMap<Integer, Integer> map = redisson.getLocalCachedMap("getAll", LocalCachedMapOptions.defaults());
+        RMap<Integer, Integer> map = redisson.getLocalCachedMap("getAll", new CompositeCodec(redisson.getConfig().getCodec(), IntegerCodec.INSTANCE), LocalCachedMapOptions.defaults());
         Cache<CacheKey, CacheValue> cache = Deencapsulation.getField(map, "cache");
         map.put(1, 100);
 
@@ -548,7 +546,7 @@ public class RedissonLocalCachedMapTest extends BaseMapTest {
         res = map.get(1);
         assertThat(res).isEqualTo(112);
 
-        RMap<Integer, Double> map2 = redisson.getLocalCachedMap("getAll2", LocalCachedMapOptions.defaults());
+        RMap<Integer, Double> map2 = redisson.getLocalCachedMap("getAll2", new CompositeCodec(redisson.getConfig().getCodec(), DoubleCodec.INSTANCE), LocalCachedMapOptions.defaults());
         map2.put(1, new Double(100.2));
 
         Double res2 = map2.addAndGet(1, new Double(12.1));
@@ -556,7 +554,7 @@ public class RedissonLocalCachedMapTest extends BaseMapTest {
         res2 = map2.get(1);
         assertThat(res2).isEqualTo(112.3);
 
-        RMap<String, Integer> mapStr = redisson.getLocalCachedMap("mapStr", LocalCachedMapOptions.defaults());
+        RMap<String, Integer> mapStr = redisson.getLocalCachedMap("mapStr", new CompositeCodec(redisson.getConfig().getCodec(), IntegerCodec.INSTANCE), LocalCachedMapOptions.defaults());
         assertThat(mapStr.put("1", 100)).isNull();
 
         assertThat(mapStr.addAndGet("1", 12)).isEqualTo(112);

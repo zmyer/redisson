@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.redisson.api.RSemaphore;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.listener.MessageListener;
+import org.redisson.client.ChannelName;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.misc.RPromise;
@@ -123,7 +124,7 @@ public abstract class RedissonBaseAdder<T extends Number> extends RedissonExpira
     private static final long SUM_MSG = 1;
 
     private final RSemaphore semaphore;
-    private final RTopic<Long> topic;
+    private final RTopic topic;
     private final int listenerId;
     
     public RedissonBaseAdder(CommandAsyncExecutor connectionManager, String name, RedissonClient redisson) {
@@ -131,10 +132,10 @@ public abstract class RedissonBaseAdder<T extends Number> extends RedissonExpira
         
         topic = redisson.getTopic(suffixName(getName(), "topic"), LongCodec.INSTANCE);
         semaphore = redisson.getSemaphore(suffixName(getName(), "semaphore"));
-        listenerId = topic.addListener(new MessageListener<Long>() {
+        listenerId = topic.addListener(Long.class, new MessageListener<Long>() {
             
             @Override
-            public void onMessage(String channel, Long msg) {
+            public void onMessage(CharSequence channel, Long msg) {
                 if (msg == SUM_MSG) {
                     RFuture<T> addAndGetFuture = addAndGetAsync();
                     addAndGetFuture.addListener(new FutureListener<T>() {

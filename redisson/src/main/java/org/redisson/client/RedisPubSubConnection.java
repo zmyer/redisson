@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.redisson.client.protocol.pubsub.PubSubPatternMessageDecoder;
 import org.redisson.client.protocol.pubsub.PubSubStatusMessage;
 import org.redisson.client.protocol.pubsub.PubSubType;
 import org.redisson.misc.RPromise;
+import org.redisson.misc.RedissonPromise;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -49,21 +50,17 @@ import io.netty.util.internal.PlatformDependent;
 public class RedisPubSubConnection extends RedisConnection {
 
     final Queue<RedisPubSubListener<Object>> listeners = new ConcurrentLinkedQueue<RedisPubSubListener<Object>>();
-    final Map<String, Codec> channels = PlatformDependent.newConcurrentHashMap();
-    final Map<String, Codec> patternChannels = PlatformDependent.newConcurrentHashMap();
-    final Set<String> unsubscibedChannels = new HashSet<String>();
-    final Set<String> punsubscibedChannels = new HashSet<String>();
+    final Map<ChannelName, Codec> channels = PlatformDependent.newConcurrentHashMap();
+    final Map<ChannelName, Codec> patternChannels = PlatformDependent.newConcurrentHashMap();
+    final Set<ChannelName> unsubscibedChannels = new HashSet<ChannelName>();
+    final Set<ChannelName> punsubscibedChannels = new HashSet<ChannelName>();
 
     public RedisPubSubConnection(RedisClient redisClient, Channel channel, RPromise<RedisPubSubConnection> connectionPromise) {
         super(redisClient, channel, connectionPromise);
     }
 
-    public void addListener(RedisPubSubListener listener) {
-        listeners.add(listener);
-    }
-
-    public void addOneShotListener(RedisPubSubListener listener) {
-        listeners.add(new OneShotPubSubListener<Object>(this, listener));
+    public void addListener(RedisPubSubListener<?> listener) {
+        listeners.add((RedisPubSubListener<Object>) listener);
     }
 
     public void removeListener(RedisPubSubListener<?> listener) {
@@ -88,23 +85,23 @@ public class RedisPubSubConnection extends RedisConnection {
         }
     }
 
-    public void subscribe(Codec codec, String ... channel) {
-        for (String ch : channel) {
-            channels.put(ch, codec);
+    public void subscribe(Codec codec, ChannelName ... channels) {
+        for (ChannelName ch : channels) {
+            this.channels.put(ch, codec);
         }
-        async(new PubSubMessageDecoder(codec.getValueDecoder()), RedisCommands.SUBSCRIBE, channel);
+        async(new PubSubMessageDecoder(codec.getValueDecoder()), RedisCommands.SUBSCRIBE, channels);
     }
 
-    public void psubscribe(Codec codec, String ... channel) {
-        for (String ch : channel) {
+    public void psubscribe(Codec codec, ChannelName ... channels) {
+        for (ChannelName ch : channels) {
             patternChannels.put(ch, codec);
         }
-        async(new PubSubPatternMessageDecoder(codec.getValueDecoder()), RedisCommands.PSUBSCRIBE, channel);
+        async(new PubSubPatternMessageDecoder(codec.getValueDecoder()), RedisCommands.PSUBSCRIBE, channels);
     }
 
-    public void unsubscribe(final String ... channels) {
+    public void unsubscribe(final ChannelName ... channels) {
         synchronized (this) {
-            for (String ch : channels) {
+            for (ChannelName ch : channels) {
                 this.channels.remove(ch);
                 unsubscibedChannels.add(ch);
             }
@@ -114,7 +111,7 @@ public class RedisPubSubConnection extends RedisConnection {
             @Override
             public void operationComplete(Future<Void> future) throws Exception {
                 if (!future.isSuccess()) {
-                    for (String channel : channels) {
+                    for (ChannelName channel : channels) {
                         removeDisconnectListener(channel);
                         onMessage(new PubSubStatusMessage(PubSubType.UNSUBSCRIBE, channel));
                     }
@@ -123,7 +120,7 @@ public class RedisPubSubConnection extends RedisConnection {
         });
     }
     
-    public void removeDisconnectListener(String channel) {
+    public void removeDisconnectListener(ChannelName channel) {
         synchronized (this) {
             unsubscibedChannels.remove(channel);
             punsubscibedChannels.remove(channel);
@@ -134,23 +131,23 @@ public class RedisPubSubConnection extends RedisConnection {
     public void fireDisconnected() {
         super.fireDisconnected();
         
-        Set<String> channels = new HashSet<String>();
-        Set<String> pchannels = new HashSet<String>();
+        Set<ChannelName> channels = new HashSet<ChannelName>();
+        Set<ChannelName> pchannels = new HashSet<ChannelName>();
         synchronized (this) {
             channels.addAll(unsubscibedChannels);
             pchannels.addAll(punsubscibedChannels);
         }
-        for (String channel : channels) {
+        for (ChannelName channel : channels) {
             onMessage(new PubSubStatusMessage(PubSubType.UNSUBSCRIBE, channel));
         }
-        for (String channel : pchannels) {
+        for (ChannelName channel : pchannels) {
             onMessage(new PubSubStatusMessage(PubSubType.PUNSUBSCRIBE, channel));
         }
     }
     
-    public void punsubscribe(final String ... channels) {
+    public void punsubscribe(final ChannelName ... channels) {
         synchronized (this) {
-            for (String ch : channels) {
+            for (ChannelName ch : channels) {
                 patternChannels.remove(ch);
                 punsubscibedChannels.add(ch);
             }
@@ -160,7 +157,7 @@ public class RedisPubSubConnection extends RedisConnection {
             @Override
             public void operationComplete(Future<Void> future) throws Exception {
                 if (!future.isSuccess()) {
-                    for (String channel : channels) {
+                    for (ChannelName channel : channels) {
                         removeDisconnectListener(channel);
                         onMessage(new PubSubStatusMessage(PubSubType.PUNSUBSCRIBE, channel));
                     }
@@ -170,14 +167,15 @@ public class RedisPubSubConnection extends RedisConnection {
     }
 
     private <T, R> ChannelFuture async(MultiDecoder<Object> messageDecoder, RedisCommand<T> command, Object ... params) {
-        return channel.writeAndFlush(new CommandData<T, R>(null, messageDecoder, null, command, params));
+        RPromise<R> promise = new RedissonPromise<R>();
+        return channel.writeAndFlush(new CommandData<T, R>(promise, messageDecoder, null, command, params));
     }
 
-    public Map<String, Codec> getChannels() {
+    public Map<ChannelName, Codec> getChannels() {
         return Collections.unmodifiableMap(channels);
     }
 
-    public Map<String, Codec> getPatternChannels() {
+    public Map<ChannelName, Codec> getPatternChannels() {
         return Collections.unmodifiableMap(patternChannels);
     }
 

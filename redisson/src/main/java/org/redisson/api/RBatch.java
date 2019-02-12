@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import org.redisson.client.RedisException;
 import org.redisson.client.codec.Codec;
 
 /**
- * Interface for using pipeline feature.
+ * Interface for using Redis pipeline feature.
  * <p>
  * All method invocations on objects got through this interface 
  * are batched to separate queue and could be executed later
@@ -33,6 +33,28 @@ import org.redisson.client.codec.Codec;
  */
 public interface RBatch {
 
+    /**
+     * Returns stream instance by <code>name</code>
+     * 
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name of stream
+     * @return RStream object
+     */
+    <K, V> RStreamAsync<K, V> getStream(String name);
+    
+    /**
+     * Returns stream instance by <code>name</code>
+     * using provided <code>codec</code> for entries.
+     * 
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name - name of stream
+     * @param codec - codec for entry
+     * @return RStream object
+     */
+    <K, V> RStreamAsync<K, V> getStream(String name, Codec codec);
+    
     /**
      * Returns geospatial items holder instance by <code>name</code>.
      * 
@@ -268,13 +290,12 @@ public interface RBatch {
     /**
      * Returns topic instance by name.
      *
-     * @param <M> type of message
      * @param name - name of object
      * @return Topic object
      */
-    <M> RTopicAsync<M> getTopic(String name);
+    RTopicAsync getTopic(String name);
 
-    <M> RTopicAsync<M> getTopic(String name, Codec codec);
+    RTopicAsync getTopic(String name, Codec codec);
 
     /**
      * Returns queue instance by name.
@@ -372,6 +393,14 @@ public interface RBatch {
      */
     RScriptAsync getScript();
 
+    /**
+     * Returns script operations object using provided codec.
+     * 
+     * @param codec - codec for params and result
+     * @return Script object
+     */
+    RScript getScript(Codec codec);
+    
     /**
      * Returns keys operations.
      * Each of Redis/Redisson object associated with own key

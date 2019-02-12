@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import org.redisson.client.protocol.Decoder;
 import org.redisson.client.protocol.Encoder;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.Unpooled;
 
 /**
  * 
@@ -36,10 +36,7 @@ public class ByteArrayCodec extends BaseCodec {
     private final Encoder encoder = new Encoder() {
         @Override
         public ByteBuf encode(Object in) throws IOException {
-            byte[] payload = (byte[])in;
-            ByteBuf out = ByteBufAllocator.DEFAULT.buffer(payload.length);
-            out.writeBytes(payload);
-            return out;
+            return Unpooled.wrappedBuffer((byte[])in);
         }
     };
 

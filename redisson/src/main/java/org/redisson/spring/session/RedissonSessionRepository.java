@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.spring.session;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,13 +31,13 @@ import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.listener.PatternMessageListener;
 import org.redisson.client.codec.StringCodec;
+import org.redisson.codec.CompositeCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.expression.Expression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.session.ExpiringSession;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.MapSession;
 import org.springframework.session.Session;
@@ -51,7 +53,7 @@ import org.springframework.session.events.SessionExpiredEvent;
 public class RedissonSessionRepository implements FindByIndexNameSessionRepository<RedissonSessionRepository.RedissonSession>, 
                                                     PatternMessageListener<String> {
 
-    final class RedissonSession implements ExpiringSession {
+    final class RedissonSession implements Session {
 
         private String principalName;
         private final MapSession delegate;
@@ -59,31 +61,31 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
 
         public RedissonSession() {
             this.delegate = new MapSession();
-            map = redisson.getMap("redisson_spring_session:" + delegate.getId());
+            map = redisson.getMap(keyPrefix + delegate.getId(), new CompositeCodec(StringCodec.INSTANCE, redisson.getConfig().getCodec()));
             principalName = resolvePrincipal(delegate);
 
             Map<String, Object> newMap = new HashMap<String, Object>(3);
-            newMap.put("session:creationTime", delegate.getCreationTime());
-            newMap.put("session:lastAccessedTime", delegate.getLastAccessedTime());
-            newMap.put("session:maxInactiveInterval", delegate.getMaxInactiveIntervalInSeconds());
+            newMap.put("session:creationTime", delegate.getCreationTime().toEpochMilli());
+            newMap.put("session:lastAccessedTime", delegate.getLastAccessedTime().toEpochMilli());
+            newMap.put("session:maxInactiveInterval", delegate.getMaxInactiveInterval().getSeconds());
             map.putAll(newMap);
 
             updateExpiration();
             
             String channelName = getEventsChannelName(delegate.getId());
-            RTopic<String> topic = redisson.getTopic(channelName, StringCodec.INSTANCE);
+            RTopic topic = redisson.getTopic(channelName, StringCodec.INSTANCE);
             topic.publish(delegate.getId());
         }
 
         private void updateExpiration() {
-            if (delegate.getMaxInactiveIntervalInSeconds() >= 0) {
-                map.expire(delegate.getMaxInactiveIntervalInSeconds(), TimeUnit.SECONDS);
+            if (delegate.getMaxInactiveInterval().getSeconds() >= 0) {
+                map.expire(delegate.getMaxInactiveInterval().getSeconds(), TimeUnit.SECONDS);
             }
         }
         
         public RedissonSession(String sessionId) {
             this.delegate = new MapSession(sessionId);
-            map = redisson.getMap("redisson_spring_session:" + sessionId);
+            map = redisson.getMap(keyPrefix + sessionId, new CompositeCodec(StringCodec.INSTANCE, redisson.getConfig().getCodec()));
             principalName = resolvePrincipal(delegate);
         }
         
@@ -95,11 +97,11 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
             Set<Entry<String, Object>> entrySet = map.readAllEntrySet();
             for (Entry<String, Object> entry : entrySet) {
                 if ("session:creationTime".equals(entry.getKey())) {
-                    delegate.setCreationTime((Long) entry.getValue());
+                    delegate.setCreationTime(Instant.ofEpochMilli((Long) entry.getValue()));
                 } else if ("session:lastAccessedTime".equals(entry.getKey())) {
-                    delegate.setLastAccessedTime((Long) entry.getValue());
+                    delegate.setLastAccessedTime(Instant.ofEpochMilli((Long) entry.getValue()));
                 } else if ("session:maxInactiveInterval".equals(entry.getKey())) {
-                    delegate.setMaxInactiveIntervalInSeconds((Integer) entry.getValue());
+                    delegate.setMaxInactiveInterval(Duration.ofSeconds((Long) entry.getValue()));
                 } else {
                     delegate.setAttribute(entry.getKey(), entry.getValue());
                 }
@@ -172,45 +174,59 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
         }
 
         @Override
-        public long getCreationTime() {
+        public Instant getCreationTime() {
             return delegate.getCreationTime();
         }
 
         @Override
-        public void setLastAccessedTime(long lastAccessedTime) {
+        public void setLastAccessedTime(Instant lastAccessedTime) {
             delegate.setLastAccessedTime(lastAccessedTime);
 
             if (map != null) {
-                map.fastPut("session:lastAccessedTime", lastAccessedTime);
+                map.fastPut("session:lastAccessedTime", lastAccessedTime.toEpochMilli());
                 updateExpiration();
             }
         }
 
         @Override
-        public long getLastAccessedTime() {
+        public Instant getLastAccessedTime() {
             return delegate.getLastAccessedTime();
         }
 
         @Override
-        public void setMaxInactiveIntervalInSeconds(int interval) {
-            delegate.setMaxInactiveIntervalInSeconds(interval);
+        public void setMaxInactiveInterval(Duration interval) {
+            delegate.setMaxInactiveInterval(interval);
 
             if (map != null) {
-                map.fastPut("session:maxInactiveInterval", interval);
+                map.fastPut("session:maxInactiveInterval", interval.getSeconds());
                 updateExpiration();
             }
         }
 
         @Override
-        public int getMaxInactiveIntervalInSeconds() {
-            return delegate.getMaxInactiveIntervalInSeconds();
+        public Duration getMaxInactiveInterval() {
+            return delegate.getMaxInactiveInterval();
         }
 
         @Override
         public boolean isExpired() {
             return delegate.isExpired();
         }
-        
+
+        @Override
+        public String changeSessionId() {
+            String id = delegate.changeSessionId();
+            if (redisson.getConfig().isClusterConfig()) {
+                Map<String, Object> oldState = map.readAllMap();
+                map.delete();
+                map = redisson.getMap(keyPrefix + id, map.getCodec());
+                map.putAll(oldState);
+            } else {
+                map.rename(keyPrefix + id);
+            }
+            return id;
+        }
+
     }
 
     private static final Logger log = LoggerFactory.getLogger(RedissonSessionRepository.class);
@@ -221,9 +237,9 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
     
     private RedissonClient redisson;
     private ApplicationEventPublisher eventPublisher;
-    private RPatternTopic<String> deletedTopic;
-    private RPatternTopic<String> expiredTopic;
-    private RPatternTopic<String> createdTopic;
+    private RPatternTopic deletedTopic;
+    private RPatternTopic expiredTopic;
+    private RPatternTopic createdTopic;
     
     private String keyPrefix = "spring:session:";
     private Integer defaultMaxInactiveInterval;
@@ -233,46 +249,42 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
         this.eventPublisher = eventPublisher;
         
         deletedTopic = redisson.getPatternTopic("__keyevent@*:del", StringCodec.INSTANCE);
-        deletedTopic.addListener(this);
+        deletedTopic.addListener(String.class, this);
         expiredTopic = redisson.getPatternTopic("__keyevent@*:expired", StringCodec.INSTANCE);
-        expiredTopic.addListener(this);
+        expiredTopic.addListener(String.class, this);
         createdTopic = redisson.getPatternTopic(getEventsChannelPrefix() + "*", StringCodec.INSTANCE);
-        createdTopic.addListener(this);
+        createdTopic.addListener(String.class, this);
     }
     
     @Override
-    public void onMessage(String pattern, String channel, String body) {
-        if (createdTopic.getPatternNames().contains(pattern)) {
-            RedissonSession session = getSession(body);
+    public void onMessage(CharSequence pattern, CharSequence channel, String body) {
+        if (createdTopic.getPatternNames().contains(pattern.toString())) {
+            RedissonSession session = findById(body);
             if (session != null) {
                 publishEvent(new SessionCreatedEvent(this, session));
             }
-        } else if (deletedTopic.getPatternNames().contains(pattern)) {
-            if (!body.contains(":")) {
+        } else if (deletedTopic.getPatternNames().contains(pattern.toString())) {
+            if (!body.startsWith(keyPrefix)) {
                 return;
             }
             
-            String id = body.split(":")[1];
+            String id = body.split(keyPrefix)[1];
             RedissonSession session = new RedissonSession(id);
             if (session.load()) {
                 session.clearPrincipal();
-                publishEvent(new SessionDeletedEvent(this, session));
-            } else {
-                publishEvent(new SessionDeletedEvent(this, id));
             }
-        } else if (expiredTopic.getPatternNames().contains(pattern)) {
-            if (!body.contains(":")) {
+            publishEvent(new SessionDeletedEvent(this, session));
+        } else if (expiredTopic.getPatternNames().contains(pattern.toString())) {
+            if (!body.startsWith(keyPrefix)) {
                 return;
             }
 
-            String id = body.split(":")[1];
+            String id = body.split(keyPrefix)[1];
             RedissonSession session = new RedissonSession(id);
             if (session.load()) {
                 session.clearPrincipal();
-                publishEvent(new SessionExpiredEvent(this, session));
-            } else {
-                publishEvent(new SessionExpiredEvent(this, id));
             }
+            publishEvent(new SessionExpiredEvent(this, session));
         }
     }
     
@@ -292,7 +304,7 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
     public RedissonSession createSession() {
         RedissonSession session = new RedissonSession();
         if (defaultMaxInactiveInterval != null) {
-            session.setMaxInactiveIntervalInSeconds(defaultMaxInactiveInterval);
+            session.setMaxInactiveInterval(Duration.ofSeconds(defaultMaxInactiveInterval));
         }
         return session;
     }
@@ -303,7 +315,7 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
     }
 
     @Override
-    public RedissonSession getSession(String id) {
+    public RedissonSession findById(String id) {
         RedissonSession session = new RedissonSession(id);
         if (!session.load() || session.isExpired()) {
             return null;
@@ -312,8 +324,8 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
     }
 
     @Override
-    public void delete(String id) {
-        RedissonSession session = getSession(id);
+    public void deleteById(String id) {
+        RedissonSession session = findById(id);
         if (session == null) {
             return;
         }
@@ -368,7 +380,7 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
         Set<String> sessionIds = set.readAll();
         Map<String, RedissonSession> result = new HashMap<String, RedissonSession>();
         for (String id : sessionIds) {
-            RedissonSession session = getSession(id);
+            RedissonSession session = findById(id);
             if (session != null) {
                 result.put(id, session);
             }
@@ -378,7 +390,7 @@ public class RedissonSessionRepository implements FindByIndexNameSessionReposito
 
     private RSet<String> getPrincipalSet(String indexValue) {
         String principalKey = getPrincipalKey(indexValue);
-        return redisson.getSet(principalKey);
+        return redisson.getSet(principalKey, StringCodec.INSTANCE);
     }
 
 }

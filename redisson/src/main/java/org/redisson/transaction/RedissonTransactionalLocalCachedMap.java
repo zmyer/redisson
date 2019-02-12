@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
  */
 package org.redisson.transaction;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.redisson.api.RFuture;
@@ -33,8 +36,8 @@ import org.redisson.transaction.operation.TransactionalOperation;
 public class RedissonTransactionalLocalCachedMap<K, V> extends RedissonTransactionalMap<K, V> implements RLocalCachedMap<K, V> {
 
     public RedissonTransactionalLocalCachedMap(CommandAsyncExecutor commandExecutor,  
-            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, RLocalCachedMap<K, V> innerMap) {
-        super(commandExecutor, operations, timeout, executed, innerMap);
+            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, RLocalCachedMap<K, V> innerMap, String transactionId) {
+        super(commandExecutor, operations, timeout, executed, innerMap, transactionId);
     }
 
     @Override
@@ -55,6 +58,26 @@ public class RedissonTransactionalLocalCachedMap<K, V> extends RedissonTransacti
     @Override
     public void clearLocalCache() {
         throw new UnsupportedOperationException("clearLocalCache method is not supported in transaction");
+    }
+
+    @Override
+    public Set<K> cachedKeySet() {
+        throw new UnsupportedOperationException("cachedKeySet method is not supported in transaction");
+    }
+
+    @Override
+    public Collection<V> cachedValues() {
+        throw new UnsupportedOperationException("cachedValues method is not supported in transaction");
+    }
+
+    @Override
+    public Set<Entry<K, V>> cachedEntrySet() {
+        throw new UnsupportedOperationException("cachedEntrySet method is not supported in transaction");
+    }
+
+    @Override
+    public Map<K, V> getCachedMap() {
+        throw new UnsupportedOperationException("getCachedMap method is not supported in transaction");
     }
 
 }

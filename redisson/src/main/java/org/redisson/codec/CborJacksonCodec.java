@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,10 @@ public class CborJacksonCodec extends JsonJacksonCodec {
     
     public CborJacksonCodec(ClassLoader classLoader) {
         super(createObjectMapper(classLoader, new ObjectMapper(new CBORFactory())));
+    }
+    
+    public CborJacksonCodec(ClassLoader classLoader, CborJacksonCodec codec) {
+        super(createObjectMapper(classLoader, codec.mapObjectMapper.copy()));
     }
     
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,10 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 
 import org.redisson.client.codec.Codec;
-import org.redisson.codec.DefaultReferenceCodecProvider;
-import org.redisson.codec.JsonJacksonCodec;
-import org.redisson.codec.ReferenceCodecProvider;
+import org.redisson.codec.FstCodec;
+import org.redisson.connection.AddressResolverGroupFactory;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.DnsAddressResolverGroupFactory;
-import org.redisson.connection.AddressResolverGroupFactory;
 import org.redisson.connection.ReplicatedConnectionManager;
 import org.redisson.misc.URIBuilder;
 
@@ -50,8 +48,6 @@ public class Config {
 
     private ClusterServersConfig clusterServersConfig;
 
-    private ElasticacheServersConfig elasticacheServersConfig;
-
     private ReplicatedServersConfig replicatedServersConfig;
     
     private  ConnectionManager connectionManager;
@@ -59,19 +55,14 @@ public class Config {
     /**
      * Threads amount shared between all redis node clients
      */
-    private int threads = 0; // 0 = current_processors_amount * 2
+    private int threads = 16;
     
-    private int nettyThreads = 0; // 0 = current_processors_amount * 2
+    private int nettyThreads = 32;
 
     /**
      * Redis key/value codec. JsonJacksonCodec used by default
      */
     private Codec codec;
-    
-    /**
-     * For codec registry and look up. DefaultCodecProvider used by default
-     */
-    private ReferenceCodecProvider referenceCodecProvider = new DefaultReferenceCodecProvider();
     
     private ExecutorService executor;
     
@@ -89,6 +80,10 @@ public class Config {
     
     private boolean keepPubSubOrder = true;
     
+    private boolean decodeInExecutor = false;
+    
+    private boolean useScriptCache = false;
+    
     /**
      * AddressResolverGroupFactory switch between default and round robin
      */
@@ -102,20 +97,20 @@ public class Config {
     }
 
     public Config(Config oldConf) {
-        setUseLinuxNativeEpoll(oldConf.isUseLinuxNativeEpoll());
         setExecutor(oldConf.getExecutor());
 
         if (oldConf.getCodec() == null) {
             // use it by default
-            oldConf.setCodec(new JsonJacksonCodec());
+            oldConf.setCodec(new FstCodec());
         }
 
+        setDecodeInExecutor(oldConf.isDecodeInExecutor());
+        setUseScriptCache(oldConf.isUseScriptCache());
         setKeepPubSubOrder(oldConf.isKeepPubSubOrder());
         setLockWatchdogTimeout(oldConf.getLockWatchdogTimeout());
         setNettyThreads(oldConf.getNettyThreads());
         setThreads(oldConf.getThreads());
         setCodec(oldConf.getCodec());
-        setReferenceCodecProvider(oldConf.getReferenceCodecProvider());
         setReferenceEnabled(oldConf.isReferenceEnabled());
         setEventLoopGroup(oldConf.getEventLoopGroup());
         setTransportMode(oldConf.getTransportMode());
@@ -132,9 +127,6 @@ public class Config {
         }
         if (oldConf.getClusterServersConfig() != null) {
             setClusterServersConfig(new ClusterServersConfig(oldConf.getClusterServersConfig()));
-        }
-        if (oldConf.getElasticacheServersConfig() != null) {
-            setElasticacheServersConfig(new ElasticacheServersConfig(oldConf.getElasticacheServersConfig()));
         }
         if (oldConf.getReplicatedServersConfig() != null) {
             setReplicatedServersConfig(new ReplicatedServersConfig(oldConf.getReplicatedServersConfig()));
@@ -160,28 +152,6 @@ public class Config {
 
     public Codec getCodec() {
         return codec;
-    }
-    
-    /**
-     * Reference objects codec provider used for codec registry and look up. 
-     * <code>org.redisson.codec.DefaultReferenceCodecProvider</code> used by default.
-     * 
-     * @param codecProvider object 
-     * @return config
-     * @see org.redisson.codec.ReferenceCodecProvider
-     */
-    public Config setReferenceCodecProvider(ReferenceCodecProvider codecProvider) {
-        this.referenceCodecProvider = codecProvider;
-        return this;
-    }
-
-    /**
-     * Returns the CodecProvider instance
-     * 
-     * @return CodecProvider
-     */
-    public ReferenceCodecProvider getReferenceCodecProvider() {
-        return referenceCodecProvider;
     }
     
     /**
@@ -219,7 +189,6 @@ public class Config {
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
         checkSingleServerConfig();
-        checkElasticacheServersConfig();
         checkReplicatedServersConfig();
 
         if (clusterServersConfig == null) {
@@ -237,37 +206,6 @@ public class Config {
     }
 
     /**
-     *
-     * Use {@link #useReplicatedServers()}
-     * 
-     * @return config object
-     */
-    @Deprecated
-    public ElasticacheServersConfig useElasticacheServers() {
-        return useElasticacheServers(new ElasticacheServersConfig());
-    }
-
-    ElasticacheServersConfig useElasticacheServers(ElasticacheServersConfig config) {
-        checkClusterServersConfig();
-        checkMasterSlaveServersConfig();
-        checkSentinelServersConfig();
-        checkSingleServerConfig();
-
-        if (elasticacheServersConfig == null) {
-            elasticacheServersConfig = new ElasticacheServersConfig();
-        }
-        return elasticacheServersConfig;
-    }
-
-    ElasticacheServersConfig getElasticacheServersConfig() {
-        return elasticacheServersConfig;
-    }
-
-    void setElasticacheServersConfig(ElasticacheServersConfig elasticacheServersConfig) {
-        this.elasticacheServersConfig = elasticacheServersConfig;
-    }
-
-    /**
      * Init Replicated servers configuration.
      * Most used with Azure Redis Cache or AWS Elasticache
      *
@@ -282,7 +220,6 @@ public class Config {
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
         checkSingleServerConfig();
-        checkElasticacheServersConfig();
 
         if (replicatedServersConfig == null) {
             replicatedServersConfig = new ReplicatedServersConfig();
@@ -333,7 +270,6 @@ public class Config {
         checkClusterServersConfig();
         checkMasterSlaveServersConfig();
         checkSentinelServersConfig();
-        checkElasticacheServersConfig();
         checkReplicatedServersConfig();
 
         if (singleServerConfig == null) {
@@ -363,7 +299,6 @@ public class Config {
         checkClusterServersConfig();
         checkSingleServerConfig();
         checkMasterSlaveServersConfig();
-        checkElasticacheServersConfig();
         checkReplicatedServersConfig();
 
         if (this.sentinelServersConfig == null) {
@@ -393,7 +328,6 @@ public class Config {
         checkClusterServersConfig();
         checkSingleServerConfig();
         checkSentinelServersConfig();
-        checkElasticacheServersConfig();
         checkReplicatedServersConfig();
 
         if (masterSlaveServersConfig == null) {
@@ -413,6 +347,10 @@ public class Config {
     public boolean isClusterConfig() {
         return clusterServersConfig != null;
     }
+    
+    public boolean isSentinelConfig() {
+        return sentinelServersConfig != null;
+    }
 
     public int getThreads() {
         return threads;
@@ -423,7 +361,7 @@ public class Config {
      * invocation handlers of <code>RRemoteService</code> object  
      * and <code>RExecutorService</code> tasks.
      * <p>
-     * Default is <code>0</code>.
+     * Default is <code>16</code>.
      * <p>
      * <code>0</code> means <code>current_processors_amount * 2</code>
      *
@@ -459,12 +397,6 @@ public class Config {
         }
     }
 
-    private void checkElasticacheServersConfig() {
-        if (elasticacheServersConfig != null) {
-            throw new IllegalStateException("elasticache replication group servers config already used!");
-        }
-    }
-
     private void checkReplicatedServersConfig() {
         if (replicatedServersConfig != null) {
             throw new IllegalStateException("Replication servers config already used!");
@@ -488,24 +420,9 @@ public class Config {
     }
     
     /**
-     * Use {@link #setTransportMode(TransportMode)}
-     */
-    @Deprecated
-    public Config setUseLinuxNativeEpoll(boolean useLinuxNativeEpoll) {
-        if (useLinuxNativeEpoll) {
-            setTransportMode(TransportMode.EPOLL);
-        }
-        return this;
-    }
-
-    public boolean isUseLinuxNativeEpoll() {
-        return getTransportMode() == TransportMode.EPOLL;
-    }
-
-    /**
      * Threads amount shared between all redis clients used by Redisson.
      * <p>
-     * Default is <code>0</code>.
+     * Default is <code>32</code>.
      * <p>
      * <code>0</code> means <code>current_processors_amount * 2</code>
      *
@@ -573,6 +490,8 @@ public class Config {
      * <p>  
      * This prevents against infinity locked locks due to Redisson client crush or 
      * any other reason when lock can't be released in proper way.
+     * <p>
+     * Default is 30000 milliseconds
      * 
      * @param lockWatchdogTimeout timeout in milliseconds
      * @return config
@@ -586,7 +505,7 @@ public class Config {
     }
 
     /**
-     * Defines whether keep PubSub messages handling in arrival order 
+     * Defines whether to keep PubSub messages handling in arrival order 
      * or handle messages concurrently. 
      * <p>
      * This setting applied only for PubSub messages per channel.
@@ -775,6 +694,44 @@ public class Config {
     public String toYAML() throws IOException {
         ConfigSupport support = new ConfigSupport();
         return support.toYAML(this);
+    }
+
+    /**
+     * Defines whether to use Lua-script cache on Redis side. 
+     * Most Redisson methods are Lua-script based and this setting turned
+     * on could increase speed of such methods execution and save network traffic.
+     * <p>
+     * NOTE: <code>readMode</code> option is not taken into account for such calls 
+     * as Redis slave redirects execution of cached Lua-script on Redis master node. 
+     * <p>
+     * Default is <code>false</code>.
+     * 
+     * @param useScriptCache - <code>true</code> if Lua-script caching is required, <code>false</code> otherwise.
+     * @return config
+     */
+    public Config setUseScriptCache(boolean useScriptCache) {
+        this.useScriptCache = useScriptCache;
+        return this;
+    }
+    public boolean isUseScriptCache() {
+        return useScriptCache;
+    }
+
+    public boolean isDecodeInExecutor() {
+        return decodeInExecutor;
+    }
+    /**
+     * Defines whether to decode data by <code>codec</code> in executor's threads or netty's threads. 
+     * If decoding data process takes long time and netty thread is used then `RedisTimeoutException` could arise time to time.
+     * <p>
+     * Default is <code>false</code>.
+     * 
+     * @param decodeInExecutor - <code>true</code> to use executor's threads, <code>false</code> to use netty's threads.
+     * @return config
+     */
+    public Config setDecodeInExecutor(boolean decodeInExecutor) {
+        this.decodeInExecutor = decodeInExecutor;
+        return this;
     }
 
 }

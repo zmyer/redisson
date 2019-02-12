@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.redisson.api;
 import java.util.Map;
 
 /**
+ * Operations over multiple Bucket objects.
  * 
  * @author Nikita Koksharov
  *
@@ -40,7 +41,7 @@ public interface RBucketsAsync {
      * don't set none of them.
      *
      * @param buckets - map of buckets
-     * @return <code>true</code> if object has been set overwise <code>false</code>
+     * @return <code>true</code> if object has been set otherwise <code>false</code>
      */
     RFuture<Boolean> trySetAsync(Map<String, ?> buckets);
 
@@ -48,6 +49,7 @@ public interface RBucketsAsync {
      * Saves objects mapped by Redis key.
      *
      * @param buckets - map of buckets
+     * @return void
      */
     RFuture<Void> setAsync(Map<String, ?> buckets);
     

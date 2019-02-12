@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,8 +87,9 @@ public interface RLock extends Lock, RExpirable, RLockAsync {
     /**
      * Unlocks lock independently of state
      *
+     * @return <code>true</code> if unlocked otherwise <code>false</code>
      */
-    void forceUnlock();
+    boolean forceUnlock();
 
     /**
      * Checks if this lock locked by any thread
@@ -96,6 +97,15 @@ public interface RLock extends Lock, RExpirable, RLockAsync {
      * @return <code>true</code> if locked otherwise <code>false</code>
      */
     boolean isLocked();
+
+    /**
+     * Checks if this lock is held by the current thread
+     *
+     * @param threadId Thread ID of locking thread
+     * @return <code>true</code> if held by given thread
+     * otherwise <code>false</code>
+     */
+    boolean isHeldByThread(long threadId);
 
     /**
      * Checks if this lock is held by the current thread

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,16 +29,17 @@ import io.netty.util.concurrent.Promise;
 public class SubscribeListener extends BaseRedisPubSubListener {
 
     private final Promise<Void> promise = ImmediateEventExecutor.INSTANCE.newPromise();
-    private final String name;
+    private final ChannelName name;
     private final PubSubType type;
 
-    public SubscribeListener(String name, PubSubType type) {
+    public SubscribeListener(ChannelName name, PubSubType type) {
         super();
         this.name = name;
         this.type = type;
     }
 
-    public boolean onStatus(PubSubType type, String channel) {
+    @Override
+    public boolean onStatus(PubSubType type, CharSequence channel) {
         if (name.equals(channel) && this.type.equals(type)) {
             promise.trySuccess(null);
         }

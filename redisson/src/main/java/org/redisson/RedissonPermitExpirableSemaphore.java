@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.redisson;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -625,6 +626,12 @@ public class RedissonPermitExpirableSemaphore extends RedissonExpirable implemen
     }
     
     @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), timeoutName);
+        return super.sizeInMemoryAsync(keys);
+    }
+    
+    @Override
     public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, getName(), timeoutName);
     }
@@ -733,6 +740,34 @@ public class RedissonPermitExpirableSemaphore extends RedissonExpirable implemen
                   + "redis.call('publish', KEYS[2], ARGV[1]); "
               + "end;",
                 Arrays.<Object>asList(getName(), getChannelName()), permits);
+    }
+
+    @Override
+    public RFuture<Boolean> updateLeaseTimeAsync(String permitId, long leaseTime, TimeUnit unit) {
+        long timeoutDate = calcTimeout(leaseTime, unit);
+        return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+                "local expiredIds = redis.call('zrangebyscore', KEYS[2], 0, ARGV[3], 'limit', 0, -1); " +
+                "if #expiredIds > 0 then " +
+                    "redis.call('zrem', KEYS[2], unpack(expiredIds)); " +
+                    "local value = redis.call('incrby', KEYS[1], #expiredIds); " + 
+                    "if tonumber(value) > 0 then " +
+                        "redis.call('publish', KEYS[3], value); " +
+                    "end;" + 
+                "end; " +
+
+                  "local value = redis.call('zscore', KEYS[2], ARGV[1]); " +
+                  "if (value ~= false) then "
+                    + "redis.call('zadd', KEYS[2], ARGV[2], ARGV[1]); "
+                    + "return 1;"
+                + "end;"
+                + "return 0;",
+                Arrays.<Object>asList(getName(), timeoutName, getChannelName()),
+                permitId, timeoutDate, System.currentTimeMillis());
+    }
+
+    @Override
+    public boolean updateLeaseTime(String permitId, long leaseTime, TimeUnit unit) {
+        return get(updateLeaseTimeAsync(permitId, leaseTime, unit));
     }
 
 }

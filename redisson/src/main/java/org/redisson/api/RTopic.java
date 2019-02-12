@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ import org.redisson.api.listener.StatusListener;
  *
  * @author Nikita Koksharov
  *
- * @param <M> the type of message object
  */
-public interface RTopic<M> extends RTopicAsync<M> {
+public interface RTopic extends RTopicAsync {
 
     /**
      * Get topic channel names
@@ -42,18 +41,20 @@ public interface RTopic<M> extends RTopicAsync<M> {
      * @param message to send
      * @return the number of clients that received the message
      */
-    long publish(M message);
+    long publish(Object message);
 
     /**
      * Subscribes to this topic.
      * <code>MessageListener.onMessage</code> is called when any message
      * is published on this topic.
      *
+     * @param <M> - type of message
+     * @param type - type of message
      * @param listener for messages
      * @return locally unique listener id
      * @see org.redisson.api.listener.MessageListener
      */
-    int addListener(MessageListener<M> listener);
+    <M> int addListener(Class<M> type, MessageListener<? extends M> listener);
 
     /**
      * Subscribes to status changes of this topic
@@ -74,13 +75,27 @@ public interface RTopic<M> extends RTopicAsync<M> {
     /**
      * Removes the listener by <code>id</code> for listening this topic
      *
-     * @param listenerId - listener id
+     * @param listenerIds - listener ids
      */
-    void removeListener(int listenerId);
+    void removeListener(Integer... listenerIds);
 
     /**
      * Removes all listeners from this topic
      */
     void removeAllListeners();
 
+    /**
+     * Returns amount of registered listeners to this topic
+     * 
+     * @return amount of listeners
+     */
+    int countListeners();
+    
+    /**
+     * Returns amount of subscribers to this topic across all Redisson instances.
+     * Each subscriber may have multiple listeners.
+     * 
+     * @return amount of subscribers
+     */
+    long countSubscribers();
 }

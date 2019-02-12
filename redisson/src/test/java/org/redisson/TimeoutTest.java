@@ -8,6 +8,7 @@ import org.redisson.api.RFuture;
 import org.redisson.api.RMap;
 import org.redisson.api.RTopic;
 import org.redisson.api.listener.MessageListener;
+import org.redisson.client.ChannelName;
 
 import io.netty.util.concurrent.Future;
 
@@ -26,10 +27,10 @@ public class TimeoutTest extends BaseTest {
 
 //    @Test
     public void testPubSub() throws InterruptedException, ExecutionException {
-        RTopic<String> topic = redisson.getTopic("simple");
-        topic.addListener(new MessageListener<String>() {
+        RTopic topic = redisson.getTopic("simple");
+        topic.addListener(String.class, new MessageListener<String>() {
             @Override
-            public void onMessage(String channel, String msg) {
+            public void onMessage(CharSequence channel, String msg) {
                 System.out.println("msg: " + msg);
             }
         });

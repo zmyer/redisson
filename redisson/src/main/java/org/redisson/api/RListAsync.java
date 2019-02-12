@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,8 @@ public interface RListAsync<V> extends RCollectionAsync<V>, RSortableAsync<List<
      */
     RFuture<Integer> addBeforeAsync(V elementToFind, V element);
     
+    RFuture<Boolean> addAsync(int index, V element);
+    
     RFuture<Boolean> addAllAsync(int index, Collection<? extends V> coll);
 
     RFuture<Integer> lastIndexOfAsync(Object o);
@@ -84,7 +86,7 @@ public interface RListAsync<V> extends RCollectionAsync<V>, RSortableAsync<List<
 
     /**
      * Trim list and remains elements only in specified range
-     * <tt>fromIndex</tt>, inclusive, and <tt>toIndex</tt>, inclusive.
+     * <code>fromIndex</code>, inclusive, and <code>toIndex</code>, inclusive.
      *
      * @param fromIndex - from index
      * @param toIndex - to index
@@ -92,8 +94,10 @@ public interface RListAsync<V> extends RCollectionAsync<V>, RSortableAsync<List<
      */
     RFuture<Void> trimAsync(int fromIndex, int toIndex);
 
-    RFuture<Void> fastRemoveAsync(long index);
+    RFuture<Void> fastRemoveAsync(int index);
 
-    RFuture<V> removeAsync(long index);
+    RFuture<V> removeAsync(int index);
+    
+    RFuture<Boolean> removeAsync(Object o, int count);
     
 }

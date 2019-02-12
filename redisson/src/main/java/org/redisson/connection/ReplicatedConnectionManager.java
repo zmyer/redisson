@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.redisson.api.RFuture;
+import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisConnectionException;
 import org.redisson.client.RedisException;
@@ -30,7 +31,9 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.config.BaseMasterSlaveServersConfig;
 import org.redisson.config.Config;
 import org.redisson.config.MasterSlaveServersConfig;
+import org.redisson.config.ReadMode;
 import org.redisson.config.ReplicatedServersConfig;
+import org.redisson.connection.ClientConnectionsEntry.FreezeReason;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,6 +97,9 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
             stopThreads();
             throw new RedisConnectionException("Can't connect to servers!");
         }
+        if (this.config.getReadMode() != ReadMode.MASTER && this.config.getSlaveAddresses().isEmpty()) {
+            log.warn("ReadMode = " + this.config.getReadMode() + ", but slave nodes are not found! Please specify all nodes in replicated mode.");
+        }
 
         initSingleEntry();
 
@@ -108,18 +114,22 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
     }
     
     private void scheduleMasterChangeCheck(final ReplicatedServersConfig cfg) {
+        if (isShuttingDown()) {
+            return;
+        }
+        
         monitorFuture = group.schedule(new Runnable() {
             @Override
             public void run() {
+                if (isShuttingDown()) {
+                    return;
+                }
+
                 final URI master = currentMaster.get();
                 log.debug("Current master: {}", master);
                 
                 final AtomicInteger count = new AtomicInteger(cfg.getNodeAddresses().size());
                 for (final URI addr : cfg.getNodeAddresses()) {
-                    if (isShuttingDown()) {
-                        return;
-                    }
-
                     RFuture<RedisConnection> connectionFuture = connectToNode(cfg, addr, null, addr.getHost());
                     connectionFuture.addListener(new FutureListener<RedisConnection>() {
                         @Override
@@ -156,8 +166,19 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
                                         if (master.equals(addr)) {
                                             log.debug("Current master {} unchanged", master);
                                         } else if (currentMaster.compareAndSet(master, addr)) {
-                                            changeMaster(singleSlotRange.getStartSlot(), addr);
+                                            RFuture<RedisClient> changeFuture = changeMaster(singleSlotRange.getStartSlot(), addr);
+                                            changeFuture.addListener(new FutureListener<RedisClient>() {
+                                                @Override
+                                                public void operationComplete(Future<RedisClient> future)
+                                                        throws Exception {
+                                                    if (!future.isSuccess()) {
+                                                        currentMaster.compareAndSet(addr, master);
+                                                    }
+                                                }
+                                            });
                                         }
+                                    } else if (!config.checkSkipSlavesInit()) {
+                                        slaveUp(addr);
                                     }
                                     
                                     if (count.decrementAndGet() == 0) {
@@ -173,9 +194,18 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
         }, cfg.getScanInterval(), TimeUnit.MILLISECONDS);
     }
 
+    private void slaveUp(URI uri) {
+        MasterSlaveEntry entry = getEntry(singleSlotRange.getStartSlot());
+        if (entry.slaveUp(uri, FreezeReason.MANAGER)) {
+            log.info("slave: {} has up", uri);
+        }
+    }
+    
     @Override
     public void shutdown() {
-        monitorFuture.cancel(true);
+        if (monitorFuture != null) {
+            monitorFuture.cancel(true);
+        }
         
         closeNodeConnections();
         super.shutdown();

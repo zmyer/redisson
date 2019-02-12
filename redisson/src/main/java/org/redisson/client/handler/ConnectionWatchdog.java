@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.redisson.client.ChannelName;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisPubSubConnection;
 import org.redisson.client.codec.Codec;
@@ -132,9 +133,9 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
                                         refresh(connection, channel);
                                         log.debug("{} connected to {}, command: {}", connection, connection.getRedisClient().getAddr(), connection.getCurrentCommand());
                                     } else {
-                                        log.warn("Can't connect " + connection + " to " + connection.getRedisClient().getAddr(), future.cause());
+                                        channel.close();
+                                        reconnect(connection, nextAttempt);
                                     }
-                                    
                                 }
                             });
                             return;
@@ -152,10 +153,10 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
     private void reattachPubSub(RedisConnection connection) {
         if (connection instanceof RedisPubSubConnection) {
             RedisPubSubConnection conn = (RedisPubSubConnection) connection;
-            for (Entry<String, Codec> entry : conn.getChannels().entrySet()) {
+            for (Entry<ChannelName, Codec> entry : conn.getChannels().entrySet()) {
                 conn.subscribe(entry.getValue(), entry.getKey());
             }
-            for (Entry<String, Codec> entry : conn.getPatternChannels().entrySet()) {
+            for (Entry<ChannelName, Codec> entry : conn.getPatternChannels().entrySet()) {
                 conn.psubscribe(entry.getValue(), entry.getKey());
             }
         }

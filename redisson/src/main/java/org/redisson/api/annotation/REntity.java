@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,17 @@
  */
 package org.redisson.api.annotation;
 
-import org.redisson.liveobject.resolver.NamingScheme;
-import org.redisson.liveobject.resolver.DefaultNamingScheme;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+
+import org.redisson.client.codec.BaseCodec;
 import org.redisson.client.codec.Codec;
-import org.redisson.codec.JsonJacksonCodec;
+import org.redisson.client.protocol.Decoder;
+import org.redisson.client.protocol.Encoder;
+import org.redisson.liveobject.resolver.DefaultNamingScheme;
+import org.redisson.liveobject.resolver.NamingScheme;
 
 /**
  * Specifies that the class is a Live Object. 
@@ -50,11 +53,12 @@ public @interface REntity {
     Class<? extends NamingScheme> namingScheme() default DefaultNamingScheme.class;
 
     /**
-     * (Optional) Live Object state codec. Defaults to {@link JsonJacksonCodec}.
+     * (Optional) Live Object state codec. 
+     * <code>null</code> means to use codec specified in Redisson configuration
      * 
      * @return value
      */
-    Class<? extends Codec> codec() default JsonJacksonCodec.class;
+    Class<? extends Codec> codec() default DEFAULT.class;
 
     /**
      * (Optional) Live Object field transformation. 
@@ -63,5 +67,17 @@ public @interface REntity {
      * @return value
      */
     TransformationMode fieldTransformation() default TransformationMode.ANNOTATION_BASED;
+    
+    static final class DEFAULT extends BaseCodec {
+        @Override
+        public Decoder<Object> getValueDecoder() {
+            return null;
+        }
+
+        @Override
+        public Encoder getValueEncoder() {
+            return null;
+        }
+    }
     
 }

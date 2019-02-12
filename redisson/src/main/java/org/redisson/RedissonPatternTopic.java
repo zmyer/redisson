@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,57 +22,93 @@ import org.redisson.api.RFuture;
 import org.redisson.api.RPatternTopic;
 import org.redisson.api.listener.PatternMessageListener;
 import org.redisson.api.listener.PatternStatusListener;
+import org.redisson.client.ChannelName;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.RedisTimeoutException;
 import org.redisson.client.codec.Codec;
-import org.redisson.command.CommandExecutor;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.config.MasterSlaveServersConfig;
-import org.redisson.connection.PubSubConnectionEntry;
+import org.redisson.misc.RPromise;
+import org.redisson.misc.RedissonPromise;
 import org.redisson.pubsub.AsyncSemaphore;
+import org.redisson.pubsub.PubSubConnectionEntry;
 import org.redisson.pubsub.PublishSubscribeService;
+
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.FutureListener;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
  *
  * @author Nikita Koksharov
  *
- * @param <M> message
  */
-public class RedissonPatternTopic<M> implements RPatternTopic<M> {
+public class RedissonPatternTopic implements RPatternTopic {
 
     final PublishSubscribeService subscribeService;
-    final CommandExecutor commandExecutor;
+    final CommandAsyncExecutor commandExecutor;
     private final String name;
+    private final ChannelName channelName;
     private final Codec codec;
 
-    protected RedissonPatternTopic(CommandExecutor commandExecutor, String name) {
+    protected RedissonPatternTopic(CommandAsyncExecutor commandExecutor, String name) {
         this(commandExecutor.getConnectionManager().getCodec(), commandExecutor, name);
     }
 
-    protected RedissonPatternTopic(Codec codec, CommandExecutor commandExecutor, String name) {
+    protected RedissonPatternTopic(Codec codec, CommandAsyncExecutor commandExecutor, String name) {
         this.commandExecutor = commandExecutor;
         this.name = name;
+        this.channelName = new ChannelName(name);
         this.codec = codec;
         this.subscribeService = commandExecutor.getConnectionManager().getSubscribeService();
     }
 
     @Override
     public int addListener(PatternStatusListener listener) {
-        return addListener(new PubSubPatternStatusListener<Object>(listener, name));
+        return addListener(new PubSubPatternStatusListener(listener, name));
     };
 
     @Override
-    public int addListener(PatternMessageListener<M> listener) {
-        PubSubPatternMessageListener<M> pubSubListener = new PubSubPatternMessageListener<M>(listener, name);
+    public <T> int addListener(Class<T> type, PatternMessageListener<T> listener) {
+        PubSubPatternMessageListener<T> pubSubListener = new PubSubPatternMessageListener<T>(type, listener, name);
         return addListener(pubSubListener);
     }
 
     private int addListener(RedisPubSubListener<?> pubSubListener) {
-        RFuture<PubSubConnectionEntry> future = subscribeService.psubscribe(name, codec, pubSubListener);
+        RFuture<PubSubConnectionEntry> future = subscribeService.psubscribe(channelName, codec, pubSubListener);
         commandExecutor.syncSubscription(future);
         return System.identityHashCode(pubSubListener);
     }
-
+    
+    @Override
+    public RFuture<Integer> addListenerAsync(PatternStatusListener listener) {
+        PubSubPatternStatusListener pubSubListener = new PubSubPatternStatusListener(listener, name);
+        return addListenerAsync(pubSubListener);
+    }
+    
+    @Override
+    public <T> RFuture<Integer> addListenerAsync(Class<T> type, PatternMessageListener<T> listener) {
+        PubSubPatternMessageListener<T> pubSubListener = new PubSubPatternMessageListener<T>(type, listener, name);
+        return addListenerAsync(pubSubListener);
+    }
+    
+    private RFuture<Integer> addListenerAsync(final RedisPubSubListener<?> pubSubListener) {
+        RFuture<PubSubConnectionEntry> future = subscribeService.subscribe(codec, channelName, pubSubListener);
+        final RPromise<Integer> result = new RedissonPromise<Integer>();
+        future.addListener(new FutureListener<PubSubConnectionEntry>() {
+            @Override
+            public void operationComplete(Future<PubSubConnectionEntry> future) throws Exception {
+                if (!future.isSuccess()) {
+                    result.tryFailure(future.cause());
+                    return;
+                }
+                
+                result.trySuccess(System.identityHashCode(pubSubListener));
+            }
+        });
+        return result;
+    }
+    
     protected void acquire(AsyncSemaphore semaphore) {
         MasterSlaveServersConfig config = commandExecutor.getConnectionManager().getConfig();
         int timeout = config.getTimeout() + config.getRetryInterval() * config.getRetryAttempts();
@@ -83,18 +119,18 @@ public class RedissonPatternTopic<M> implements RPatternTopic<M> {
     
     @Override
     public void removeListener(int listenerId) {
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(name);
+        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
         acquire(semaphore);
 
-        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(name);
+        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
         if (entry == null) {
             semaphore.release();
             return;
         }
         
-        entry.removeListener(name, listenerId);
-        if (!entry.hasListeners(name)) {
-            subscribeService.punsubscribe(name, semaphore);
+        entry.removeListener(channelName, listenerId);
+        if (!entry.hasListeners(channelName)) {
+            subscribeService.punsubscribe(channelName, semaphore);
         } else {
             semaphore.release();
         }
@@ -102,37 +138,36 @@ public class RedissonPatternTopic<M> implements RPatternTopic<M> {
     
     @Override
     public void removeAllListeners() {
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(name);
+        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
         acquire(semaphore);
         
-        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(name);
+        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
         if (entry == null) {
             semaphore.release();
             return;
         }
 
-        entry.removeAllListeners(name);
-        if (!entry.hasListeners(name)) {
-            subscribeService.punsubscribe(name, semaphore);
+        if (entry.removeAllListeners(channelName)) {
+            subscribeService.punsubscribe(channelName, semaphore);
         } else {
             semaphore.release();
         }
     }
 
     @Override
-    public void removeListener(PatternMessageListener<M> listener) {
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(name);
+    public void removeListener(PatternMessageListener<?> listener) {
+        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
         acquire(semaphore);
         
-        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(name);
+        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
         if (entry == null) {
             semaphore.release();
             return;
         }
 
-        entry.removeListener(name, listener);
-        if (!entry.hasListeners(name)) {
-            subscribeService.punsubscribe(name, semaphore);
+        entry.removeListener(channelName, listener);
+        if (!entry.hasListeners(channelName)) {
+            subscribeService.punsubscribe(channelName, semaphore);
         } else {
             semaphore.release();
         }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,28 @@ package org.redisson.client.handler;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
+import org.redisson.client.ChannelName;
 import org.redisson.client.RedisPubSubConnection;
+import org.redisson.client.codec.ByteArrayCodec;
 import org.redisson.client.protocol.CommandData;
 import org.redisson.client.protocol.Decoder;
+import org.redisson.client.protocol.QueueCommand;
 import org.redisson.client.protocol.RedisCommands;
+import org.redisson.client.protocol.decoder.ListObjectDecoder;
 import org.redisson.client.protocol.decoder.MultiDecoder;
 import org.redisson.client.protocol.pubsub.Message;
 import org.redisson.client.protocol.pubsub.PubSubMessage;
 import org.redisson.client.protocol.pubsub.PubSubPatternMessage;
 import org.redisson.client.protocol.pubsub.PubSubStatusMessage;
+import org.redisson.misc.LogHelper;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.util.internal.PlatformDependent;
 
@@ -43,34 +51,64 @@ import io.netty.util.internal.PlatformDependent;
  */
 public class CommandPubSubDecoder extends CommandDecoder {
 
-    private static final List<String> MESSAGES = Arrays.asList("subscribe", "psubscribe", "punsubscribe", "unsubscribe");
+    private static final Set<String> MESSAGES = new HashSet<String>(Arrays.asList("subscribe", "psubscribe", "punsubscribe", "unsubscribe"));
     // It is not needed to use concurrent map because responses are coming consecutive
-    private final Map<String, PubSubEntry> entries = new HashMap<String, PubSubEntry>();
+    private final Map<ChannelName, PubSubEntry> entries = new HashMap<ChannelName, PubSubEntry>();
     private final Map<PubSubKey, CommandData<Object, Object>> commands = PlatformDependent.newConcurrentHashMap();
 
-    private final ExecutorService executor;
     private final boolean keepOrder;
     
-    public CommandPubSubDecoder(ExecutorService executor, boolean keepOrder) {
-        this.executor = executor;
+    public CommandPubSubDecoder(ExecutorService executor, boolean keepOrder, boolean decodeInExecutor) {
+        super(executor, decodeInExecutor);
         this.keepOrder = keepOrder;
     }
 
-    public void addPubSubCommand(String channel, CommandData<Object, Object> data) {
+    public void addPubSubCommand(ChannelName channel, CommandData<Object, Object> data) {
         String operation = data.getCommand().getName().toLowerCase();
         commands.put(new PubSubKey(channel, operation), data);
     }
 
     @Override
+    protected void decodeCommand(Channel channel, ByteBuf in, QueueCommand data) throws Exception {
+        if (data == null) {
+            try {
+                while (in.writerIndex() > in.readerIndex()) {
+                    decode(in, null, null, channel, false, null);
+                }
+                sendNext(channel);
+            } catch (Exception e) {
+                log.error("Unable to decode data. channel: " + channel + ", reply: " + LogHelper.toString(in), e);
+                sendNext(channel);
+                throw e;
+            }
+        } else if (data instanceof CommandData) {
+            CommandData<Object, Object> cmd = (CommandData<Object, Object>)data;
+            try {
+                while (in.writerIndex() > in.readerIndex()) {
+                    decode(in, cmd, null, channel, false, null);
+                }
+                sendNext(channel, data);
+            } catch (Exception e) {
+                log.error("Unable to decode data. channel: " + channel + ", reply: " + LogHelper.toString(in), e);
+                cmd.tryFailure(e);
+                sendNext(channel);
+                throw e;
+            }
+        }
+    }
+    
+    @Override
     protected void decodeResult(CommandData<Object, Object> data, List<Object> parts, Channel channel,
             final Object result) throws IOException {
-        super.decodeResult(data, parts, channel, result);
-        
+        if (executor.isShutdown()) {
+            return;
+        }
+
         if (result instanceof Message) {
             checkpoint();
 
             final RedisPubSubConnection pubSubConnection = RedisPubSubConnection.getFrom(channel);
-            String channelName = ((Message) result).getChannel();
+            ChannelName channelName = ((Message) result).getChannel();
             if (result instanceof PubSubStatusMessage) {
                 String operation = ((PubSubStatusMessage) result).getType().name().toLowerCase();
                 PubSubKey key = new PubSubKey(channelName, operation);
@@ -109,11 +147,15 @@ public class CommandPubSubDecoder extends CommandDecoder {
                             pubSubConnection.onMessage((PubSubStatusMessage) result);
                         } else if (result instanceof PubSubMessage) {
                             pubSubConnection.onMessage((PubSubMessage) result);
-                        } else {
+                        } else if (result instanceof PubSubPatternMessage) {
                             pubSubConnection.onMessage((PubSubPatternMessage) result);
                         }
                     }
                 });
+            }
+        } else {
+            if (data != null && data.getCommand().getName().equals("PING")) {
+                super.decodeResult(data, parts, channel, result);
             }
         }
     }
@@ -135,7 +177,7 @@ public class CommandPubSubDecoder extends CommandDecoder {
                                     pubSubConnection.onMessage((PubSubStatusMessage) result);
                                 } else if (result instanceof PubSubMessage) {
                                     pubSubConnection.onMessage((PubSubMessage) result);
-                                } else {
+                                } else if (result instanceof PubSubPatternMessage) {
                                     pubSubConnection.onMessage((PubSubPatternMessage) result);
                                 }
                             } else {
@@ -155,28 +197,26 @@ public class CommandPubSubDecoder extends CommandDecoder {
     
     @Override
     protected MultiDecoder<Object> messageDecoder(CommandData<Object, Object> data, List<Object> parts) {
-        if (data == null) {
-            if (parts.isEmpty()) {
+        if (parts.isEmpty()) {
+            return null;
+        }
+        String command = parts.get(0).toString();
+        if (MESSAGES.contains(command)) {
+            ChannelName channelName = new ChannelName((byte[]) parts.get(1));
+            PubSubKey key = new PubSubKey(channelName, command);
+            CommandData<Object, Object> commandData = commands.get(key);
+            if (commandData == null) {
                 return null;
             }
-            String command = parts.get(0).toString();
-            if (MESSAGES.contains(command)) {
-                String channelName = parts.get(1).toString();
-                PubSubKey key = new PubSubKey(channelName, command);
-                CommandData<Object, Object> commandData = commands.get(key);
-                if (commandData == null) {
-                    return null;
-                }
-                return commandData.getCommand().getReplayMultiDecoder();
-            } else if (command.equals("message")) {
-                String channelName = (String) parts.get(1);
-                return entries.get(channelName).getDecoder();
-            } else if (command.equals("pmessage")) {
-                String patternName = (String) parts.get(1);
-                return entries.get(patternName).getDecoder();
-            } else if (command.equals("pong")) {
-                return null;
-            }
+            return commandData.getCommand().getReplayMultiDecoder();
+        } else if (command.equals("message")) {
+            byte[] channelName = (byte[]) parts.get(1);
+            return entries.get(new ChannelName(channelName)).getDecoder();
+        } else if (command.equals("pmessage")) {
+            byte[] patternName = (byte[]) parts.get(1);
+            return entries.get(new ChannelName(patternName)).getDecoder();
+        } else if (command.equals("pong")) {
+            return new ListObjectDecoder<Object>(0);
         }
 
         return data.getCommand().getReplayMultiDecoder();
@@ -184,21 +224,40 @@ public class CommandPubSubDecoder extends CommandDecoder {
 
     @Override
     protected Decoder<Object> selectDecoder(CommandData<Object, Object> data, List<Object> parts) {
-        if (data == null && parts != null) {
+        if (parts != null) {
+            if (data != null && parts.size() == 1 && "pong".equals(parts.get(0))) {
+                return data.getCodec().getValueDecoder();
+            }
+            if (parts.size() == 1) {
+                return ByteArrayCodec.INSTANCE.getValueDecoder();
+            }
+            if (parts.size() == 2 && "pmessage".equals(parts.get(0))) {
+                return ByteArrayCodec.INSTANCE.getValueDecoder();
+            }
+            
             if (parts.size() == 2 && "message".equals(parts.get(0))) {
-                String channelName = (String) parts.get(1);
-                return entries.get(channelName).getDecoder().getDecoder(parts.size(), state());
+                byte[] channelName = (byte[]) parts.get(1);
+                return getDecoder(parts, channelName);
             }
             if (parts.size() == 3 && "pmessage".equals(parts.get(0))) {
-                String patternName = (String) parts.get(1);
-                return entries.get(patternName).getDecoder().getDecoder(parts.size(), state());
+                byte[] patternName = (byte[]) parts.get(1);
+                return getDecoder(parts, patternName);
             }
         }
+        
         if (data != null && data.getCommand().getName().equals(RedisCommands.PING.getName())) {
             return data.getCodec().getValueDecoder();
         }
         
         return super.selectDecoder(data, parts);
+    }
+
+    private Decoder<Object> getDecoder(List<Object> parts, byte[] name) {
+        PubSubEntry entry = entries.get(new ChannelName(name));
+        if (entry != null) {
+            return entry.getDecoder().getDecoder(parts.size(), state());
+        }
+        return ByteArrayCodec.INSTANCE.getValueDecoder();
     }
 
 }

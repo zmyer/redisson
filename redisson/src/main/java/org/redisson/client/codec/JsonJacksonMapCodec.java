@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 
 /**
- * Type based codec for RMap objects
+ * @deprecated Use org.redisson.codec.TypedJsonJacksonCodec instead
  * 
  * @author Nikita Koksharov
  * @author Andrej Kazakov
@@ -95,6 +95,10 @@ public class JsonJacksonMapCodec extends JsonJacksonCodec {
     
     public JsonJacksonMapCodec(TypeReference<?> keyTypeReference, TypeReference<?> valueTypeReference, ObjectMapper mapper) {
         this(keyTypeReference, valueTypeReference, null, null, mapper);
+    }
+    
+    public JsonJacksonMapCodec(ClassLoader classLoader, JsonJacksonMapCodec codec) {
+        this(codec.keyTypeReference, codec.valueTypeReference, codec.keyClass, codec.valueClass, createObjectMapper(classLoader, codec.mapObjectMapper.copy()));
     }
 
     JsonJacksonMapCodec(TypeReference<?> keyTypeReference, TypeReference<?> valueTypeReference, Class<?> keyClass, Class<?> valueClass, ObjectMapper mapper) {

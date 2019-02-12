@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,16 @@
  */
 package org.redisson.api;
 
-import java.util.List;
 import java.util.Map;
 
 /**
+ * Operations over multiple Bucket objects.
  * 
  * @author Nikita Koksharov
  *
  */
 public interface RBuckets extends RBucketsAsync {
 
-    /*
-     * Use RKeys.findKeysByPattern method instead
-     */
-    @Deprecated
-    <V> List<RBucket<V>> find(String pattern);
-    
     /**
      * Returns Redis object mapped by key. Result Map is not contains
      * key-value entry for null values.

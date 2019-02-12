@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.client.protocol.pubsub;
 
+import org.redisson.client.ChannelName;
+
 /**
  * 
  * @author Nikita Koksharov
@@ -23,15 +25,16 @@ package org.redisson.client.protocol.pubsub;
 public class PubSubStatusMessage implements Message {
 
     private final PubSubType type;
-    private final String channel;
+    private final ChannelName channel;
 
-    public PubSubStatusMessage(PubSubType type, String channel) {
+    public PubSubStatusMessage(PubSubType type, ChannelName channel) {
         super();
         this.type = type;
         this.channel = channel;
     }
 
-    public String getChannel() {
+    @Override
+    public ChannelName getChannel() {
         return channel;
     }
 

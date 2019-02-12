@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,178 +15,61 @@
  */
 package org.redisson.reactive;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
 import org.reactivestreams.Publisher;
-import org.redisson.RedissonLexSortedSet;
+import org.redisson.RedissonScoredSortedSet;
 import org.redisson.api.RFuture;
-import org.redisson.api.RLexSortedSetAsync;
-import org.redisson.api.RLexSortedSetReactive;
-import org.redisson.client.codec.StringCodec;
-import org.redisson.client.protocol.RedisCommands;
-import org.redisson.command.CommandReactiveExecutor;
+import org.redisson.api.RLexSortedSet;
+import org.redisson.client.RedisClient;
+import org.redisson.client.protocol.decoder.ListScanResult;
 
-import reactor.fn.Supplier;
+import reactor.core.publisher.Flux;
+
 
 /**
  * 
  * @author Nikita Koksharov
  *
  */
-public class RedissonLexSortedSetReactive extends RedissonScoredSortedSetReactive<String> implements RLexSortedSetReactive {
+public class RedissonLexSortedSetReactive {
 
-    private final RLexSortedSetAsync instance;
+    private final RLexSortedSet instance;
     
-    public RedissonLexSortedSetReactive(CommandReactiveExecutor commandExecutor, String name) {
-        super(StringCodec.INSTANCE, commandExecutor, name);
-        instance = new RedissonLexSortedSet(commandExecutor, name, null);
+    public RedissonLexSortedSetReactive(RLexSortedSet instance) {
+        this.instance = instance;
     }
 
-    @Override
-    public Publisher<Integer> addAll(Publisher<? extends String> c) {
-        return new PublisherAdder<String>(this).addAll(c);
-    }
-
-    @Override
-    public Publisher<Integer> removeRangeHead(final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
+    public Publisher<Boolean> addAll(Publisher<? extends String> c) {
+        return new PublisherAdder<String>() {
             @Override
-            public RFuture<Integer> get() {
-                return instance.removeRangeHeadAsync(toElement, toInclusive);
+            public RFuture<Boolean> add(Object e) {
+                return instance.addAsync((String)e);
+            }
+        }.addAll(c);
+    }
+
+    private Publisher<String> scanIteratorReactive(final String pattern, final int count) {
+        return Flux.create(new SetReactiveIterator<String>() {
+            @Override
+            protected RFuture<ListScanResult<Object>> scanIterator(final RedisClient client, final long nextIterPos) {
+                return ((RedissonScoredSortedSet<String>)instance).scanIteratorAsync(client, nextIterPos, pattern, count);
             }
         });
     }
 
-    @Override
-    public Publisher<Integer> removeRangeTail(final String fromElement, final boolean fromInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
-            @Override
-            public RFuture<Integer> get() {
-                return instance.removeRangeTailAsync(fromElement, fromInclusive);
-            }
-        });
+    public Publisher<String> iterator() {
+        return scanIteratorReactive(null, 10);
     }
 
-    @Override
-    public Publisher<Integer> removeRange(final String fromElement, final boolean fromInclusive, final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
-            @Override
-            public RFuture<Integer> get() {
-                return instance.removeRangeAsync(fromElement, fromInclusive, toElement, toInclusive);
-            }
-        });
+    public Publisher<String> iterator(String pattern) {
+        return scanIteratorReactive(pattern, 10);
     }
 
-    @Override
-    public Publisher<Collection<String>> rangeHead(final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeHeadAsync(toElement, toInclusive);
-            }
-        });
+    public Publisher<String> iterator(int count) {
+        return scanIteratorReactive(null, count);
     }
 
-    @Override
-    public Publisher<Collection<String>> rangeTail(final String fromElement, final boolean fromInclusive) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeTailAsync(fromElement, fromInclusive);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Collection<String>> range(final String fromElement, final boolean fromInclusive, final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeAsync(fromElement, fromInclusive, toElement, toInclusive);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Collection<String>> rangeHead(final String toElement, final boolean toInclusive, final int offset, final int count) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeHeadAsync(toElement, toInclusive, offset, count);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Collection<String>> rangeTail(final String fromElement, final boolean fromInclusive, final int offset, final int count) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeTailAsync(fromElement, fromInclusive, offset, count);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Collection<String>> range(final String fromElement, final boolean fromInclusive, final String toElement, final boolean toInclusive, final int offset, final int count) {
-        return reactive(new Supplier<RFuture<Collection<String>>>() {
-            @Override
-            public RFuture<Collection<String>> get() {
-                return instance.rangeAsync(fromElement, fromInclusive, toElement, toInclusive, offset, count);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Integer> countTail(final String fromElement, final boolean fromInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
-            @Override
-            public RFuture<Integer> get() {
-                return instance.countTailAsync(fromElement, fromInclusive);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Integer> countHead(final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
-            @Override
-            public RFuture<Integer> get() {
-                return instance.countHeadAsync(toElement, toInclusive);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Integer> count(final String fromElement, final boolean fromInclusive, final String toElement, final boolean toInclusive) {
-        return reactive(new Supplier<RFuture<Integer>>() {
-            @Override
-            public RFuture<Integer> get() {
-                return instance.countAsync(fromElement, fromInclusive, toElement, toInclusive);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Integer> add(final String e) {
-        return commandExecutor.writeReactive(getName(), StringCodec.INSTANCE, RedisCommands.ZADD_INT, getName(), 0, e);
-    }
-
-    @Override
-    public Publisher<Integer> addAll(Collection<? extends String> c) {
-        List<Object> params = new ArrayList<Object>(2*c.size());
-        for (Object param : c) {
-            params.add(0);
-            params.add(param);
-        }
-        return commandExecutor.writeReactive(getName(), StringCodec.INSTANCE, RedisCommands.ZADD_INT, getName(), params.toArray());
-    }
-
-    @Override
-    public Publisher<Collection<String>> range(int startIndex, int endIndex) {
-        return valueRange(startIndex, endIndex);
+    public Publisher<String> iterator(String pattern, int count) {
+        return scanIteratorReactive(pattern, count);
     }
 
 }

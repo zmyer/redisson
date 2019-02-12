@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -32,30 +33,33 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.redisson.api.MapOptions;
+import org.redisson.api.RCountDownLatch;
 import org.redisson.api.MapOptions.WriteMode;
 import org.redisson.api.RFuture;
 import org.redisson.api.RLock;
 import org.redisson.api.RMap;
+import org.redisson.api.RPermitExpirableSemaphore;
 import org.redisson.api.RReadWriteLock;
+import org.redisson.api.RSemaphore;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.mapreduce.RMapReduce;
 import org.redisson.client.RedisClient;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.codec.LongCodec;
-import org.redisson.client.codec.MapScanCodec;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommand.ValueType;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.convertor.NumberConvertor;
 import org.redisson.client.protocol.decoder.MapScanResult;
-import org.redisson.client.protocol.decoder.ScanObjectEntry;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.connection.decoder.MapGetAllDecoder;
 import org.redisson.mapreduce.RedissonMapReduce;
 import org.redisson.misc.Hash;
 import org.redisson.misc.RPromise;
 import org.redisson.misc.RedissonPromise;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.Future;
@@ -72,6 +76,8 @@ import io.netty.util.concurrent.FutureListener;
  */
 public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
 
+    private final Logger log = LoggerFactory.getLogger(getClass());
+    
     final AtomicInteger writeBehindCurrentThreads = new AtomicInteger();
     final Queue<Runnable> writeBehindTasks;
     final RedissonClient redisson;
@@ -103,7 +109,31 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     public <KOut, VOut> RMapReduce<K, V, KOut, VOut> mapReduce() {
         return new RedissonMapReduce<K, V, KOut, VOut>(this, redisson, commandExecutor.getConnectionManager());
     }
+    
+    @Override
+    public RPermitExpirableSemaphore getPermitExpirableSemaphore(K key) {
+        String lockName = getLockName(key, "permitexpirablesemaphore");
+        return new RedissonPermitExpirableSemaphore(commandExecutor, lockName, ((Redisson)redisson).getSemaphorePubSub());
+    }
 
+    @Override
+    public RSemaphore getSemaphore(K key) {
+        String lockName = getLockName(key, "semaphore");
+        return new RedissonSemaphore(commandExecutor, lockName, ((Redisson)redisson).getSemaphorePubSub());
+    }
+    
+    @Override
+    public RCountDownLatch getCountDownLatch(K key) {
+        String lockName = getLockName(key, "countdownlatch");
+        return new RedissonCountDownLatch(commandExecutor, lockName);
+    }
+    
+    @Override
+    public RLock getFairLock(K key) {
+        String lockName = getLockName(key, "fairlock");
+        return new RedissonFairLock(commandExecutor, lockName);
+    }
+    
     @Override
     public RLock getLock(K key) {
         String lockName = getLockName(key, "lock");
@@ -116,7 +146,7 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return new RedissonReadWriteLock(commandExecutor, lockName);
     }
     
-    private String getLockName(Object key, String suffix) {
+    public String getLockName(Object key, String suffix) {
         ByteBuf keyState = encodeMapKey(key);
         try {
             return suffixName(getName(key), Hash.hash128toBase64(keyState) + ":" + suffix);
@@ -262,12 +292,72 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     }
 
     @Override
-    public void putAll(Map<? extends K, ? extends V> map) {
+    public final void putAll(Map<? extends K, ? extends V> map) {
         get(putAllAsync(map));
     }
 
     @Override
-    public RFuture<Void> putAllAsync(final Map<? extends K, ? extends V> map) {
+    public void putAll(Map<? extends K, ? extends V> map, int batchSize) {
+        get(putAllAsync(map, batchSize));
+    }
+    
+    @Override
+    public RFuture<Void> putAllAsync(Map<? extends K, ? extends V> map, int batchSize) {
+        Map<K, V> batch = new HashMap<K, V>();
+        AtomicInteger counter = new AtomicInteger();
+        Iterator<Entry<K, V>> iter = ((Map<K, V>)map).entrySet().iterator();
+        
+        RPromise<Void> promise = new RedissonPromise<Void>();
+        putAllAsync(batch, iter, counter, batchSize, promise);
+        return promise;
+    }
+    
+    private void putAllAsync(final Map<K, V> batch, final Iterator<Entry<K, V>> iter, 
+                                final AtomicInteger counter, final int batchSize, final RPromise<Void> promise) {
+        batch.clear();
+        
+        while (iter.hasNext()) {
+            Entry<K, V> entry = iter.next();
+            batch.put(entry.getKey(), entry.getValue());
+            counter.incrementAndGet();
+            if (counter.get() % batchSize == 0) {
+                RFuture<Void> future = putAllAsync(batch);
+                future.addListener(new FutureListener<Void>() {
+                    @Override
+                    public void operationComplete(Future<Void> future) throws Exception {
+                        if (!future.isSuccess()) {
+                            promise.tryFailure(future.cause());
+                            return;
+                        }
+                        
+                        putAllAsync(batch, iter, counter, batchSize, promise);
+                    }
+                });
+                return;
+            }
+        }
+        
+        if (batch.isEmpty()) {
+            promise.trySuccess(null);
+            return;
+        }
+        
+        RFuture<Void> future = putAllAsync(batch);
+        future.addListener(new FutureListener<Void>() {
+            @Override
+            public void operationComplete(Future<Void> future) throws Exception {
+                if (!future.isSuccess()) {
+                    promise.tryFailure(future.cause());
+                    return;
+                }
+                
+                promise.trySuccess(null);
+            }
+        });
+    }
+    
+    @Override
+    public final RFuture<Void> putAllAsync(final Map<? extends K, ? extends V> map) {
         if (map.isEmpty()) {
             return RedissonPromise.newSucceededFuture(null);
         }
@@ -286,7 +376,7 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return mapWriterFuture(future, listener);
     }
 
-    protected <M> RFuture<M> mapWriterFuture(RFuture<M> future, final MapWriterTask<M> listener) {
+    protected final <M> RFuture<M> mapWriterFuture(RFuture<M> future, final MapWriterTask<M> listener) {
         if (options != null && options.getWriteMode() == WriteMode.WRITE_BEHIND) {
             future.addListener(new MapWriteBehindListener<M>(commandExecutor, listener, writeBehindCurrentThreads, writeBehindTasks, options.getWriteBehindThreads()));
             return future;
@@ -348,8 +438,19 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return keySet(null);
     }
     
+    @Override
     public Set<K> keySet(String pattern) {
-        return new KeySet(pattern);
+        return keySet(pattern, 10);
+    }
+    
+    @Override
+    public Set<K> keySet(String pattern, int count) {
+        return new KeySet(pattern, count);
+    }
+
+    @Override
+    public Set<K> keySet(int count) {
+        return keySet(null, count);
     }
 
     @Override
@@ -357,8 +458,19 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return values(null);
     }
 
+    @Override
+    public Collection<V> values(String keyPattern, int count) {
+        return new Values(keyPattern, count);
+    }
+    
+    @Override
     public Collection<V> values(String keyPattern) {
-        return new Values(keyPattern);
+        return values(keyPattern, 10);
+    }
+
+    @Override
+    public Collection<V> values(int count) {
+        return values(null, count);
     }
     
     @Override
@@ -366,10 +478,21 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return entrySet(null);
     }
     
+    @Override
     public Set<java.util.Map.Entry<K, V>> entrySet(String keyPattern) {
-        return new EntrySet(keyPattern);
+        return entrySet(keyPattern, 10);
     }
 
+    @Override
+    public Set<java.util.Map.Entry<K, V>> entrySet(String keyPattern, int count) {
+        return new EntrySet(keyPattern, count);
+    }
+
+    @Override
+    public Set<java.util.Map.Entry<K, V>> entrySet(int count) {
+        return entrySet(null, count);
+    }
+    
     @Override
     public Set<K> readAllKeySet() {
         return get(readAllKeySetAsync());
@@ -708,7 +831,14 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     
     @Override
     public RFuture<Void> loadAllAsync(boolean replaceExistingValues, int parallelism) {
-        return loadAllAsync(options.getLoader().loadAllKeys(), replaceExistingValues, parallelism, null);
+        Iterable<K> keys;
+        try {
+            keys = options.getLoader().loadAllKeys();
+        } catch (Exception e) {
+            log.error("Unable to load keys for map " + getName(), e);
+            return RedissonPromise.newFailedFuture(e);
+        }
+        return loadAllAsync(keys, replaceExistingValues, parallelism, null);
     }
     
     @Override
@@ -732,22 +862,27 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
  
         final RPromise<Void> result = new RedissonPromise<Void>();
         final AtomicInteger counter = new AtomicInteger();
-        final Iterator<? extends K> iter = keys.iterator();
-        for (int i = 0; i < parallelism; i++) {
-            if (!iter.hasNext()) {
-                if (counter.get() == 0) {
-                    result.trySuccess(null);
+        try {
+            final Iterator<? extends K> iter = keys.iterator();
+            for (int i = 0; i < parallelism; i++) {
+                if (!iter.hasNext()) {
+                    if (counter.get() == 0) {
+                        result.trySuccess(null);
+                    }
+                    break;
                 }
-                break;
+                
+                counter.incrementAndGet();
+                K key = iter.next();
+                if (replaceExistingValues) {
+                    loadValue(result, counter, iter, key, loadedEntires);
+                } else {
+                    checkAndLoadValue(result, counter, iter, key, loadedEntires);
+                }
             }
-            
-            counter.incrementAndGet();
-            K key = iter.next();
-            if (replaceExistingValues) {
-                loadValue(result, counter, iter, key, loadedEntires);
-            } else {
-                checkAndLoadValue(result, counter, iter, key, loadedEntires);
-            }
+        } catch (Exception e) {
+            log.error("Unable to load keys for map " + getName(), e);
+            return RedissonPromise.newFailedFuture(e);
         }
         
         return result;
@@ -1014,15 +1149,20 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return get(fastRemoveAsync(keys));
     }
 
-    public MapScanResult<ScanObjectEntry, ScanObjectEntry> scanIterator(String name, RedisClient client, long startPos, String pattern) {
-        if (pattern == null) {
-            RFuture<MapScanResult<ScanObjectEntry, ScanObjectEntry>> f 
-                                    = commandExecutor.readAsync(client, name, new MapScanCodec(codec), RedisCommands.HSCAN, name, startPos);
-            return get(f);
-        }
-        RFuture<MapScanResult<ScanObjectEntry, ScanObjectEntry>> f 
-                                    = commandExecutor.readAsync(client, name, new MapScanCodec(codec), RedisCommands.HSCAN, name, startPos, "MATCH", pattern);
+    public MapScanResult<Object, Object> scanIterator(String name, RedisClient client, long startPos, String pattern, int count) {
+        RFuture<MapScanResult<Object, Object>> f = scanIteratorAsync(name, client, startPos, pattern, count);
         return get(f);
+    }
+    
+    public RFuture<MapScanResult<Object, Object>> scanIteratorAsync(String name, RedisClient client, long startPos, String pattern, int count) {
+        if (pattern == null) {
+            RFuture<MapScanResult<Object, Object>> f 
+                                    = commandExecutor.readAsync(client, name, codec, RedisCommands.HSCAN, name, startPos, "COUNT", count);
+            return f;
+        }
+        RFuture<MapScanResult<Object, Object>> f 
+                                    = commandExecutor.readAsync(client, name, codec, RedisCommands.HSCAN, name, startPos, "MATCH", pattern, "COUNT", count);
+        return f;
     }
 
     @Override
@@ -1101,11 +1241,11 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         return h;
     }
 
-    protected Iterator<K> keyIterator(String pattern) {
-        return new RedissonMapIterator<K>(RedissonMap.this, pattern) {
+    protected Iterator<K> keyIterator(String pattern, int count) {
+        return new RedissonMapIterator<K>(RedissonMap.this, pattern, count) {
             @Override
-            protected K getValue(java.util.Map.Entry<ScanObjectEntry, ScanObjectEntry> entry) {
-                return (K) entry.getKey().getObj();
+            protected K getValue(java.util.Map.Entry<Object, Object> entry) {
+                return (K) entry.getKey();
             }
         };
     }
@@ -1113,14 +1253,16 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     class KeySet extends AbstractSet<K> {
 
         private final String pattern;
+        private final int count;
         
-        public KeySet(String pattern) {
+        public KeySet(String pattern, int count) {
             this.pattern = pattern;
+            this.count = count;
         }
 
         @Override
         public Iterator<K> iterator() {
-            return keyIterator(pattern);
+            return keyIterator(pattern, count);
         }
 
         @Override
@@ -1152,11 +1294,11 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
 
     }
 
-    protected Iterator<V> valueIterator(String pattern) {
-        return new RedissonMapIterator<V>(RedissonMap.this, pattern) {
+    protected Iterator<V> valueIterator(String pattern, int count) {
+        return new RedissonMapIterator<V>(RedissonMap.this, pattern, count) {
             @Override
-            protected V getValue(java.util.Map.Entry<ScanObjectEntry, ScanObjectEntry> entry) {
-                return (V) entry.getValue().getObj();
+            protected V getValue(java.util.Map.Entry<Object, Object> entry) {
+                return (V) entry.getValue();
             }
         };
     }
@@ -1164,14 +1306,16 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     final class Values extends AbstractCollection<V> {
 
         private final String keyPattern;
+        private final int count;
         
-        public Values(String keyPattern) {
+        public Values(String keyPattern, int count) {
             this.keyPattern = keyPattern;
+            this.count = count;
         }
 
         @Override
         public Iterator<V> iterator() {
-            return valueIterator(keyPattern);
+            return valueIterator(keyPattern, count);
         }
 
         @Override
@@ -1199,8 +1343,8 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
 
     }
 
-    protected Iterator<Map.Entry<K,V>> entryIterator(String pattern) {
-        return new RedissonMapIterator<Map.Entry<K, V>>(RedissonMap.this, pattern);
+    protected Iterator<Map.Entry<K,V>> entryIterator(String pattern, int count) {
+        return new RedissonMapIterator<Map.Entry<K, V>>(RedissonMap.this, pattern, count);
     }
 
     private void loadValue(final K key, final RPromise<V> result, final boolean replaceValue) {
@@ -1248,9 +1392,16 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
         commandExecutor.getConnectionManager().getExecutor().execute(new Runnable() {
             @Override
             public void run() {
-                final V value = options.getLoader().load(key);
-                if (value == null) {
-                    unlock(result, lock, threadId, value);
+                final V value;
+                try {
+                    value = options.getLoader().load(key);
+                    if (value == null) {
+                        unlock(result, lock, threadId, value);
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.error("Unable to load value by key " + key + " for map " + getName(), e);
+                    unlock(result, lock, threadId, null);
                     return;
                 }
                     
@@ -1288,13 +1439,15 @@ public class RedissonMap<K, V> extends RedissonExpirable implements RMap<K, V> {
     final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
 
         private final String keyPattern;
+        private final int count;
         
-        public EntrySet(String keyPattern) {
+        public EntrySet(String keyPattern, int count) {
             this.keyPattern = keyPattern;
+            this.count = count;
         }
 
         public final Iterator<Map.Entry<K,V>> iterator() {
-            return entryIterator(keyPattern);
+            return entryIterator(keyPattern, count);
         }
 
         public final boolean contains(Object o) {

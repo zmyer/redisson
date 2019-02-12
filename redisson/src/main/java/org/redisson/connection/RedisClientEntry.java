@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,11 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.Time;
 import org.redisson.command.CommandSyncService;
+import org.redisson.misc.RPromise;
+import org.redisson.misc.RedissonPromise;
+
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.FutureListener;
 
 /**
  * 
@@ -61,7 +66,20 @@ public class RedisClientEntry implements ClusterNode {
     }
 
     public RFuture<Boolean> pingAsync() {
-        return commandExecutor.readAsync(client, null, RedisCommands.PING_BOOL);
+        final RPromise<Boolean> result = new RedissonPromise<Boolean>();
+        RFuture<Boolean> f = commandExecutor.readAsync(client, null, RedisCommands.PING_BOOL);
+        f.addListener(new FutureListener<Boolean>() {
+            @Override
+            public void operationComplete(Future<Boolean> future) throws Exception {
+                if (!future.isSuccess()) {
+                    result.trySuccess(false);
+                    return;
+                }
+                
+                result.trySuccess(future.getNow());
+            }
+        });
+        return result;
     }
     
     @Override
@@ -148,10 +166,10 @@ public class RedisClientEntry implements ClusterNode {
         }
         throw new IllegalStateException();
     }
-    
-    @Override
-    public Map<String, String> info() {
-        return clusterInfo();
-    }
 
+    @Override
+    public String toString() {
+        return "RedisClientEntry [client=" + client + ", type=" + type + "]";
+    }
+    
 }

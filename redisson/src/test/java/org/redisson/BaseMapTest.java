@@ -19,6 +19,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
+import org.redisson.api.RDestroyable;
 import org.redisson.api.RLocalCachedMap;
 import org.redisson.api.RMap;
 import org.redisson.api.RMapCache;
@@ -26,7 +27,10 @@ import org.redisson.api.RedissonClient;
 import org.redisson.api.map.MapLoader;
 import org.redisson.api.map.MapWriter;
 import org.redisson.client.codec.Codec;
+import org.redisson.client.codec.DoubleCodec;
+import org.redisson.client.codec.IntegerCodec;
 import org.redisson.client.codec.StringCodec;
+import org.redisson.codec.CompositeCodec;
 import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.config.Config;
 
@@ -134,6 +138,12 @@ public abstract class BaseMapTest extends BaseTest {
 
     }
     
+    private void destroy(RMap<?, ?> map) {
+        if (map instanceof RDestroyable) {
+            ((RDestroyable) map).destroy();
+        }
+    }
+    
     @Test
     public void testGetAllWithStringKeys() {
         RMap<String, Integer> map = getMap("getAllStrings");
@@ -148,6 +158,8 @@ public abstract class BaseMapTest extends BaseTest {
         expectedMap.put("B", 200);
         expectedMap.put("C", 300);
         assertThat(filtered).isEqualTo(expectedMap);
+        
+        destroy(map);
     }
 
     @Test
@@ -166,12 +178,13 @@ public abstract class BaseMapTest extends BaseTest {
             assertThat(next).isIn(new AbstractMap.SimpleEntry("A", "1"), new AbstractMap.SimpleEntry("B", "2"));
         }
 
+        destroy(rmap);
         redisson.shutdown();
     }
 
     @Test
     public void testInteger() {
-        Map<Integer, Integer> map = getMap("test_int");
+        RMap<Integer, Integer> map = getMap("test_int");
         map.put(1, 2);
         map.put(3, 4);
 
@@ -182,11 +195,12 @@ public abstract class BaseMapTest extends BaseTest {
 
         Integer val2 = map.get(3);
         assertThat(val2).isEqualTo(4);
+        destroy(map);
     }
 
     @Test
     public void testLong() {
-        Map<Long, Long> map = getMap("test_long");
+        RMap<Long, Long> map = getMap("test_long");
         map.put(1L, 2L);
         map.put(3L, 4L);
 
@@ -197,6 +211,7 @@ public abstract class BaseMapTest extends BaseTest {
 
         Long val2 = map.get(3L);
         assertThat(val2).isEqualTo(4);
+        destroy(map);
     }
 
     @Test
@@ -224,6 +239,7 @@ public abstract class BaseMapTest extends BaseTest {
             counter++;
         }
         assertThat(counter).isEqualTo(size);
+        destroy(rMap);
     }
     
     @Test
@@ -257,23 +273,26 @@ public abstract class BaseMapTest extends BaseTest {
         
         assertThat(rmap.entrySet()).containsExactlyElementsOf(map.entrySet());
         assertThat(rmap.readAllEntrySet()).containsExactlyElementsOf(map.entrySet());
+        destroy(rmap);
     }
     
     @Test(expected = NullPointerException.class)
     public void testNullValue() {
-        Map<Integer, String> map = getMap("simple12");
+        RMap<Integer, String> map = getMap("simple12");
+        destroy(map);
         map.put(1, null);
     }
     
     @Test(expected = NullPointerException.class)
     public void testNullKey() {
-        Map<Integer, String> map = getMap("simple12");
+        RMap<Integer, String> map = getMap("simple12");
+        destroy(map);
         map.put(null, "1");
     }
 
     @Test
     public void testSize() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
 
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("3"), new SimpleValue("4"));
@@ -293,6 +312,7 @@ public abstract class BaseMapTest extends BaseTest {
 
         map.remove(new SimpleKey("3"));
         Assert.assertEquals(3, map.size());
+        destroy(map);
     }
 
     @Test
@@ -301,8 +321,10 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertFalse(map.remove(1, 3));
         map.put(4, 5);
         Assert.assertTrue(map.remove(4, 5));
+        destroy(map);
     }
 
+    @Test
     public void testFastPutIfAbsent() throws Exception {
         RMap<SimpleKey, SimpleValue> map = getMap("simple");
         SimpleKey key = new SimpleKey("1");
@@ -315,11 +337,12 @@ public abstract class BaseMapTest extends BaseTest {
         SimpleValue value1 = new SimpleValue("4");
         assertThat(map.fastPutIfAbsent(key1, value1)).isTrue();
         assertThat(map.get(key1)).isEqualTo(value1);
+        destroy(map);
     }
     
     @Test
     public void testPutAll() {
-        Map<Integer, String> map = getMap("simple");
+        RMap<Integer, String> map = getMap("simple");
         map.put(1, "1");
         map.put(2, "2");
         map.put(3, "3");
@@ -331,6 +354,47 @@ public abstract class BaseMapTest extends BaseTest {
         map.putAll(joinMap);
 
         assertThat(map.keySet()).containsOnly(1, 2, 3, 4, 5, 6);
+        destroy(map);
+    }
+    
+    @Test
+    public void testPutAllBatched() {
+        RMap<Integer, String> map = getMap("simple");
+        map.put(1, "1");
+        map.put(2, "2");
+        map.put(3, "3");
+
+        Map<Integer, String> joinMap = new HashMap<Integer, String>();
+        joinMap.put(4, "4");
+        joinMap.put(5, "5");
+        joinMap.put(6, "6");
+        map.putAll(joinMap, 5);
+
+        assertThat(map.keySet()).containsOnly(1, 2, 3, 4, 5, 6);
+        
+        Map<Integer, String> joinMap2 = new HashMap<Integer, String>();
+        joinMap2.put(7, "7");
+        joinMap2.put(8, "8");
+        joinMap2.put(9, "9");
+        joinMap2.put(10, "10");
+        joinMap2.put(11, "11");
+        map.putAll(joinMap2, 5);
+        
+        assertThat(map.keySet()).containsOnly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+
+        Map<Integer, String> joinMap3 = new HashMap<Integer, String>();
+        joinMap3.put(12, "12");
+        joinMap3.put(13, "13");
+        joinMap3.put(14, "14");
+        joinMap3.put(15, "15");
+        joinMap3.put(16, "16");
+        joinMap3.put(17, "17");
+        joinMap3.put(18, "18");
+        map.putAll(joinMap3, 5);
+        
+        assertThat(map.keySet()).containsOnly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18);
+        
+        destroy(map);
     }
     
     @Test
@@ -340,15 +404,16 @@ public abstract class BaseMapTest extends BaseTest {
             joinMap.put(i, "" + i);
         }
         
-        Map<Integer, String> map = getMap("simple");
+        RMap<Integer, String> map = getMap("simple");
         map.putAll(joinMap);
         
         assertThat(map.size()).isEqualTo(joinMap.size());
+        destroy(map);
     }
     
     @Test
     public void testPutGet() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("33"), new SimpleValue("44"));
         map.put(new SimpleKey("5"), new SimpleValue("6"));
@@ -358,11 +423,12 @@ public abstract class BaseMapTest extends BaseTest {
 
         SimpleValue val2 = map.get(new SimpleKey("5"));
         Assert.assertEquals("6", val2.getValue());
+        destroy(map);
     }
 
     @Test
     public void testPutIfAbsent() throws Exception {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         SimpleKey key = new SimpleKey("1");
         SimpleValue value = new SimpleValue("2");
         map.put(key, value);
@@ -373,13 +439,12 @@ public abstract class BaseMapTest extends BaseTest {
         SimpleValue value1 = new SimpleValue("4");
         Assert.assertNull(map.putIfAbsent(key1, value1));
         Assert.assertEquals(value1, map.get(key1));
+        destroy(map);
     }
     
     @Test(timeout = 5000)
     public void testDeserializationErrorReturnsErrorImmediately() throws Exception {
-        redisson.getConfig().setCodec(new JsonJacksonCodec());
-
-        RMap<String, SimpleObjectWithoutDefaultConstructor> map = getMap("deserializationFailure");
+        RMap<String, SimpleObjectWithoutDefaultConstructor> map = getMap("deserializationFailure", new JsonJacksonCodec());
         Assume.assumeTrue(!(map instanceof RLocalCachedMap));
         SimpleObjectWithoutDefaultConstructor object = new SimpleObjectWithoutDefaultConstructor("test-val");
 
@@ -392,6 +457,7 @@ public abstract class BaseMapTest extends BaseTest {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        destroy(map);
     }
 
     public static class SimpleObjectWithoutDefaultConstructor {
@@ -413,7 +479,7 @@ public abstract class BaseMapTest extends BaseTest {
     
     @Test
     public void testReplaceOldValueFail() {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
 
         boolean res = map.replace(new SimpleKey("1"), new SimpleValue("43"), new SimpleValue("31"));
@@ -421,11 +487,12 @@ public abstract class BaseMapTest extends BaseTest {
 
         SimpleValue val1 = map.get(new SimpleKey("1"));
         Assert.assertEquals("2", val1.getValue());
+        destroy(map);
     }
 
     @Test
     public void testReplaceOldValueSuccess() {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
 
         boolean res = map.replace(new SimpleKey("1"), new SimpleValue("2"), new SimpleValue("3"));
@@ -436,11 +503,12 @@ public abstract class BaseMapTest extends BaseTest {
 
         SimpleValue val1 = map.get(new SimpleKey("1"));
         Assert.assertEquals("3", val1.getValue());
+        destroy(map);
     }
 
     @Test
     public void testReplaceValue() {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
 
         SimpleValue res = map.replace(new SimpleKey("1"), new SimpleValue("3"));
@@ -448,12 +516,13 @@ public abstract class BaseMapTest extends BaseTest {
 
         SimpleValue val1 = map.get(new SimpleKey("1"));
         Assert.assertEquals("3", val1.getValue());
+        destroy(map);
     }
 
 
     @Test
     public void testReplace() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("33"), new SimpleValue("44"));
         map.put(new SimpleKey("5"), new SimpleValue("6"));
@@ -464,11 +533,12 @@ public abstract class BaseMapTest extends BaseTest {
         map.put(new SimpleKey("33"), new SimpleValue("abc"));
         SimpleValue val2 = map.get(new SimpleKey("33"));
         Assert.assertEquals("abc", val2.getValue());
+        destroy(map);
     }
     
     @Test
     public void testContainsValue() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("33"), new SimpleValue("44"));
         map.put(new SimpleKey("5"), new SimpleValue("6"));
@@ -476,22 +546,24 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertTrue(map.containsValue(new SimpleValue("2")));
         Assert.assertFalse(map.containsValue(new SimpleValue("441")));
         Assert.assertFalse(map.containsValue(new SimpleKey("5")));
+        destroy(map);
     }
 
     @Test
     public void testContainsKey() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("33"), new SimpleValue("44"));
         map.put(new SimpleKey("5"), new SimpleValue("6"));
 
         Assert.assertTrue(map.containsKey(new SimpleKey("33")));
         Assert.assertFalse(map.containsKey(new SimpleKey("34")));
+        destroy(map);
     }
 
     @Test
     public void testRemoveValueFail() {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
 
         boolean res = map.remove(new SimpleKey("2"), new SimpleValue("1"));
@@ -502,11 +574,12 @@ public abstract class BaseMapTest extends BaseTest {
 
         SimpleValue val1 = map.get(new SimpleKey("1"));
         Assert.assertEquals("2", val1.getValue());
+        destroy(map);
     }
     
     @Test
     public void testRemoveValue() {
-        ConcurrentMap<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
 
         boolean res = map.remove(new SimpleKey("1"), new SimpleValue("2"));
@@ -516,11 +589,12 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertNull(val1);
 
         Assert.assertEquals(0, map.size());
+        destroy(map);
     }
     
     @Test
     public void testRemoveObject() {
-        Map<SimpleKey, SimpleValue> map = getMap("simple");
+        RMap<SimpleKey, SimpleValue> map = getMap("simple");
         map.put(new SimpleKey("1"), new SimpleValue("2"));
         map.put(new SimpleKey("33"), new SimpleValue("44"));
         map.put(new SimpleKey("5"), new SimpleValue("6"));
@@ -530,6 +604,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.remove(new SimpleKey("11"))).isNull();
 
         assertThat(map.size()).isEqualTo(1);
+        destroy(map);
     }
     
     @Test
@@ -543,6 +618,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.remove(3)).isEqualTo(5);
         assertThat(map.remove(10)).isNull();
         assertThat(map.remove(7)).isEqualTo(8);
+        destroy(map);
     }
 
     @Test
@@ -556,6 +632,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.fastRemove(1, 3, 7)).isEqualTo(3);
         Thread.sleep(1);
         assertThat(map.size()).isEqualTo(1);
+        destroy(map);
     }
     
     @Test
@@ -576,6 +653,7 @@ public abstract class BaseMapTest extends BaseTest {
         }
 
         assertThat(values.size()).isEqualTo(0);
+        destroy(map);
     }
 
     @Test
@@ -586,6 +664,7 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertFalse(map.fastPut(1, 3));
         assertThat(map.get(1)).isEqualTo(3);
         Assert.assertEquals(1, map.size());
+        destroy(map);
     }
     
     @Test
@@ -598,6 +677,7 @@ public abstract class BaseMapTest extends BaseTest {
         
         Assert.assertEquals(1, map.size());
         assertThat(map.get(1)).isEqualTo(3);
+        destroy(map);
     }
 
     @Test
@@ -614,6 +694,7 @@ public abstract class BaseMapTest extends BaseTest {
 
         assertThat(map).isEqualTo(testMap);
         assertThat(testMap.hashCode()).isEqualTo(map.hashCode());
+        destroy(map);
     }
 
     @Test
@@ -623,6 +704,7 @@ public abstract class BaseMapTest extends BaseTest {
 
         assertThat(map.fastRemove()).isZero();
         assertThat(map.size()).isEqualTo(1);
+        destroy(map);
     }
     
     @Test
@@ -635,6 +717,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.keySet("?0")).containsExactly("10", "20", "30");
         assertThat(map.keySet("1")).isEmpty();
         assertThat(map.keySet("10")).containsExactly("10");
+        destroy(map);
     }
 
     @Test
@@ -647,6 +730,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.values("?0")).containsExactly("100", "200", "300");
         assertThat(map.values("1")).isEmpty();
         assertThat(map.values("10")).containsExactly("100");
+        destroy(map);
     }
 
     @Test
@@ -659,6 +743,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.entrySet("?0")).containsExactly(new AbstractMap.SimpleEntry("10", "100"), new AbstractMap.SimpleEntry("20", "200"), new AbstractMap.SimpleEntry("30", "300"));
         assertThat(map.entrySet("1")).isEmpty();
         assertThat(map.entrySet("10")).containsExactly(new AbstractMap.SimpleEntry("10", "100"));
+        destroy(map);
     }
     
     @Test
@@ -671,6 +756,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.readAllKeySet().size()).isEqualTo(3);
         Map<SimpleKey, SimpleValue> testMap = new HashMap<>(map);
         assertThat(map.readAllKeySet()).containsOnlyElementsOf(testMap.keySet());
+        destroy(map);
     }
     
     @Test
@@ -690,6 +776,7 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertEquals(10000, cnt);
         assertThat(map).isEmpty();
         Assert.assertEquals(0, map.size());
+        destroy(map);
     }
     
     @Test
@@ -712,6 +799,7 @@ public abstract class BaseMapTest extends BaseTest {
         }
         Assert.assertEquals(10000, cnt);
         assertThat(map.size()).isEqualTo(cnt - removed);
+        destroy(map);
     }
     
     @Test
@@ -731,6 +819,7 @@ public abstract class BaseMapTest extends BaseTest {
         Assert.assertEquals(10000, cnt);
         assertThat(map).isEmpty();
         Assert.assertEquals(0, map.size());
+        destroy(map);
     }
 
     @Test
@@ -743,6 +832,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.readAllKeySet().size()).isEqualTo(1000);
         Map<SimpleKey, SimpleValue> testMap = new HashMap<>(map);
         assertThat(map.readAllKeySet()).containsOnlyElementsOf(testMap.keySet());
+        destroy(map);
     }
 
     @Test
@@ -755,6 +845,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.readAllValues().size()).isEqualTo(3);
         Map<SimpleKey, SimpleValue> testMap = new HashMap<>(map);
         assertThat(map.readAllValues()).containsOnlyElementsOf(testMap.values());
+        destroy(map);
     }
     
     @Test
@@ -771,6 +862,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(s).isEqualTo(joinMap);
         
         assertThat(map.size()).isEqualTo(joinMap.size());
+        destroy(map);
     }
     
     @Test
@@ -787,6 +879,7 @@ public abstract class BaseMapTest extends BaseTest {
         expectedMap.put(2, 200);
         expectedMap.put(3, 300);
         assertThat(filtered).isEqualTo(expectedMap);
+        destroy(map);
     }
     
     @Test
@@ -797,6 +890,7 @@ public abstract class BaseMapTest extends BaseTest {
         map.put("1", "1234");
         assertThat(map.valueSize("4")).isZero();
         assertThat(map.valueSize("1")).isEqualTo(6);
+        destroy(map);
     }
     
     @Test
@@ -822,6 +916,7 @@ public abstract class BaseMapTest extends BaseTest {
         expectedMap.put(8, 800);
         
         assertThat(filtered.entrySet()).containsExactlyElementsOf(expectedMap.entrySet());
+        destroy(map);
     }
     
     @Test
@@ -848,12 +943,13 @@ public abstract class BaseMapTest extends BaseTest {
         expectedMap.put(8, 800);
         
         assertThat(filtered.entrySet()).containsExactlyElementsOf(expectedMap.entrySet());
+        destroy(map);
     }
 
     
     @Test
     public void testAddAndGet() throws InterruptedException {
-        RMap<Integer, Integer> map = getMap("getAll");
+        RMap<Integer, Integer> map = getMap("getAll", new CompositeCodec(redisson.getConfig().getCodec(), IntegerCodec.INSTANCE));
         map.put(1, 100);
 
         Integer res = map.addAndGet(1, 12);
@@ -861,7 +957,7 @@ public abstract class BaseMapTest extends BaseTest {
         res = map.get(1);
         assertThat(res).isEqualTo(112);
 
-        RMap<Integer, Double> map2 = getMap("getAll2");
+        RMap<Integer, Double> map2 = getMap("getAll2", new CompositeCodec(redisson.getConfig().getCodec(), DoubleCodec.INSTANCE));
         map2.put(1, new Double(100.2));
 
         Double res2 = map2.addAndGet(1, new Double(12.1));
@@ -869,11 +965,12 @@ public abstract class BaseMapTest extends BaseTest {
         res2 = map2.get(1);
         assertThat(res2).isEqualTo(112.3);
 
-        RMap<String, Integer> mapStr = getMap("mapStr");
+        RMap<String, Integer> mapStr = getMap("mapStr", new CompositeCodec(redisson.getConfig().getCodec(), IntegerCodec.INSTANCE));
         assertThat(mapStr.put("1", 100)).isNull();
 
         assertThat(mapStr.addAndGet("1", 12)).isEqualTo(112);
         assertThat(mapStr.get("1")).isEqualTo(112);
+        destroy(map);
     }
     
     protected abstract <K, V> RMap<K, V> getMap(String name);
@@ -895,6 +992,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.get("0")).isNull();
         assertThat(map.get("1")).isEqualTo("11");
         assertThat(map.get("0")).isNull(); // This line will never return anything and the test will hang
+        destroy(map);
     }
     
     @Test
@@ -908,6 +1006,7 @@ public abstract class BaseMapTest extends BaseTest {
         Map<String, Integer> expected = new HashMap<>();
         expected.put("1", 18);
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
 
     
@@ -925,6 +1024,7 @@ public abstract class BaseMapTest extends BaseTest {
         Map<String, String> expected = new HashMap<>();
         expected.put("3", "33");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -941,6 +1041,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("2", "22");
         expected.put("3", "33");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -986,6 +1087,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("1", "00");
         expected.put("3", "33");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -1009,6 +1111,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected2.put("2", "22");
         expected2.put("3", "33");
         assertThat(store).isEqualTo(expected2);
+        destroy(map);
     }
     
     @Test
@@ -1024,6 +1127,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("1", "11");
         expected.put("2", "22");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -1039,6 +1143,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("1", "11");
         expected.put("2", "22");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -1057,6 +1162,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("2", "22");
         expected.put("3", "33");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
 
     
@@ -1074,6 +1180,7 @@ public abstract class BaseMapTest extends BaseTest {
         expected.put("2", "22");
         expected.put("3", "33");
         assertThat(store).isEqualTo(expected);
+        destroy(map);
     }
     
     @Test
@@ -1099,6 +1206,7 @@ public abstract class BaseMapTest extends BaseTest {
         assertThat(map.size()).isEqualTo(10);
         assertThat(map.get("0")).isEqualTo("00");
         assertThat(map.get("5")).isEqualTo("55");
+        destroy(map);
     }
     
     @Test
@@ -1117,6 +1225,7 @@ public abstract class BaseMapTest extends BaseTest {
         for (int i = 0; i < 100; i++) {
             assertThat(map.containsKey("" + i)).isTrue();
         }
+        destroy(map);
     }
     
     protected <K, V> MapWriter<K, V> createMapWriter(Map<K, V> map) {
@@ -1160,6 +1269,19 @@ public abstract class BaseMapTest extends BaseTest {
             }
         };
     }
+
+    @Test
+    public void testMapLoaderGetWithException() {
+        Map<String, String> cache = new HashMap<String, String>() {
+            @Override
+            public String get(Object key) {
+                throw new RuntimeException();
+            };
+        };
+        
+        RMap<String, String> map = getLoaderTestMap("test", cache);
+        assertThat(map.get("1")).isNull();
+    }
     
     @Test
     public void testMapLoaderGet() {
@@ -1185,6 +1307,7 @@ public abstract class BaseMapTest extends BaseTest {
         expectedMap.put("3", "33");
         assertThat(s).isEqualTo(expectedMap);
         assertThat(map.size()).isEqualTo(4);
+        destroy(map);
     }
 
 }

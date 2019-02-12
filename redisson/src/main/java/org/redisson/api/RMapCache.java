@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  */
 package org.redisson.api;
 
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.redisson.api.map.MapWriter;
 import org.redisson.api.map.event.MapEntryListener;
 
 /**
@@ -37,7 +39,7 @@ import org.redisson.api.map.event.MapEntryListener;
  * @param <K> key
  * @param <V> value
  */
-public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V> {
+public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDestroyable {
 
     /**
      * Sets max size of the map.
@@ -231,6 +233,33 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V> {
      *         <code>false</code> if key already exists in the hash.
      */
     boolean fastPutIfAbsent(K key, V value, long ttl, TimeUnit ttlUnit, long maxIdleTime, TimeUnit maxIdleUnit);
+    
+    /**
+     * Associates the specified <code>value</code> with the specified <code>key</code>
+     * in batch.
+     * <p>
+     * If {@link MapWriter} is defined then new map entries will be stored in write-through mode. 
+     *
+     * @param map - mappings to be stored in this map
+     * @param ttl - time to live for all key\value entries.
+     *              If <code>0</code> then stores infinitely.
+     * @param ttlUnit - time unit
+     */
+    void putAll(java.util.Map<? extends K, ? extends V> map, long ttl, TimeUnit ttlUnit);
+    
+    /**
+     * Associates the specified <code>value</code> with the specified <code>key</code>
+     * in batch.
+     * <p>
+     * If {@link MapWriter} is defined then new map entries are stored in write-through mode. 
+     *
+     * @param map - mappings to be stored in this map
+     * @param ttl - time to live for all key\value entries.
+     *              If <code>0</code> then stores infinitely.
+     * @param ttlUnit - time unit
+     * @return void
+     */
+    RFuture<Void> putAllAsync(Map<? extends K, ? extends V> map, long ttl, TimeUnit ttlUnit);
 
     /**
      * Returns the number of entries in cache.
@@ -264,6 +293,7 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V> {
     /**
      * Remaining time to live of map entry associated with a <code>key</code>. 
      *
+     * @param key - map key
      * @return time in milliseconds
      *          -2 if the key does not exist.
      *          -1 if the key exists but has no associated expire.

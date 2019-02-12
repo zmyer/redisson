@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterSe
     /**
      * Redis cluster scan interval in milliseconds
      */
-    private int scanInterval = 1000;
+    private int scanInterval = 5000;
 
     public ClusterServersConfig() {
     }
@@ -70,6 +70,8 @@ public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterSe
     }
     /**
      * Redis cluster scan interval in milliseconds
+     * <p>
+     * Default is <code>5000</code>
      *
      * @param scanInterval in milliseconds
      * @return config

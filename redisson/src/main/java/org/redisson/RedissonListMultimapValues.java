@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,6 +90,12 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     @Override
     public RFuture<Boolean> renamenxAsync(String newName) {
         throw new UnsupportedOperationException("This operation is not supported for SetMultimap values Set");
+    }
+    
+    @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), timeoutSetName);
+        return super.sizeInMemoryAsync(keys);
     }
     
     public RFuture<Boolean> deleteAsync() {
@@ -187,6 +193,11 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     public RFuture<Boolean> addAsync(V e) {
         return list.addAsync(e);
     }
+    
+    @Override
+    public RFuture<Boolean> addAsync(int index, V element) {
+        return list.addAsync(index, element);
+    }
 
     @Override
     public boolean remove(Object o) {
@@ -198,7 +209,8 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         return removeAsync(o, 1);
     }
 
-    protected RFuture<Boolean> removeAsync(Object o, int count) {
+    @Override
+    public RFuture<Boolean> removeAsync(Object o, int count) {
         return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[3]); "
@@ -213,7 +225,8 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
          System.currentTimeMillis(), count, encodeMapKey(key), encodeMapValue(o));
     }
 
-    protected boolean remove(Object o, int count) {
+    @Override
+    public boolean remove(Object o, int count) {
         return get(removeAsync(o, count));
     }
 
@@ -438,7 +451,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
     
     @Override
-    public RFuture<V> removeAsync(long index) {
+    public RFuture<V> removeAsync(int index) {
         return list.removeAsync(index);
     }
 
@@ -448,7 +461,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
     
     @Override
-    public RFuture<Void> fastRemoveAsync(long index) {
+    public RFuture<Void> fastRemoveAsync(int index) {
         return list.fastRemoveAsync(index);
     }
     
@@ -745,6 +758,66 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     public <T> RFuture<Collection<T>> readSortAsync(String byPattern, List<String> getPatterns, SortOrder order, int offset,
             int count) {
         return list.readSortAsync(byPattern, getPatterns, order, offset, count);
+    }
+
+    @Override
+    public List<V> readSortAlpha(SortOrder order) {
+        return list.readSortAlpha(order);
+    }
+
+    @Override
+    public List<V> readSortAlpha(SortOrder order, int offset, int count) {
+        return list.readSortAlpha(order, offset, count);
+    }
+
+    @Override
+    public List<V> readSortAlpha(String byPattern, SortOrder order) {
+        return list.readSortAlpha(byPattern, order);
+    }
+
+    @Override
+    public List<V> readSortAlpha(String byPattern, SortOrder order, int offset, int count) {
+        return list.readSortAlpha(byPattern, order, offset, count);
+    }
+
+    @Override
+    public <T> Collection<T> readSortAlpha(String byPattern, List<String> getPatterns, SortOrder order) {
+        return list.readSortAlpha(byPattern, getPatterns, order);
+    }
+
+    @Override
+    public <T> Collection<T> readSortAlpha(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
+        return list.readSortAlpha(byPattern, getPatterns, order, offset, count);
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(SortOrder order) {
+        return list.readSortAlphaAsync(order);
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(SortOrder order, int offset, int count) {
+        return list.readSortAlphaAsync(order, offset, count);
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(String byPattern, SortOrder order) {
+        return list.readSortAlphaAsync(byPattern, order);
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(String byPattern, SortOrder order, int offset, int count) {
+        return list.readSortAlphaAsync(byPattern, order, offset, count);
+    }
+
+    @Override
+    public <T> RFuture<Collection<T>> readSortAlphaAsync(String byPattern, List<String> getPatterns, SortOrder order) {
+        return list.readSortAlphaAsync(byPattern, getPatterns, order);
+    }
+
+    @Override
+    public <T> RFuture<Collection<T>> readSortAlphaAsync(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
+        return list.readSortAlphaAsync(byPattern, getPatterns, order, offset, count);
     }
 
     @Override

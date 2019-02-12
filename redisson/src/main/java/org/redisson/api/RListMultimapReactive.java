@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@ package org.redisson.api;
 
 import java.util.List;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
+ * Reactive interface for List based Multimap object
  * 
  * @author Nikita Koksharov
  *
@@ -48,7 +49,7 @@ public interface RListMultimapReactive<K, V> extends RMultimapReactive<K, V> {
      * @param key - map key
      * @return list of values 
      */
-    Publisher<List<V>> getAll(K key);
+    Mono<List<V>> getAll(K key);
     
     /**
      * Removes all values associated with the key {@code key}.
@@ -61,7 +62,7 @@ public interface RListMultimapReactive<K, V> extends RMultimapReactive<K, V> {
      *     list <i>may</i> be modifiable, but updating it will have no
      *     effect on the multimap.
      */
-    Publisher<List<V>> removeAll(Object key);
+    Mono<List<V>> removeAll(Object key);
     
     /**
      * Stores a collection of values with the same key, replacing any existing
@@ -77,6 +78,6 @@ public interface RListMultimapReactive<K, V> extends RMultimapReactive<K, V> {
      *     <i>may</i> be modifiable, but updating it will have no effect on the
      *     multimap.
      */
-    Publisher<List<V>> replaceValues(K key, Iterable<? extends V> values);
+    Mono<List<V>> replaceValues(K key, Iterable<? extends V> values);
     
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.redisson.RedissonSetCache;
+import org.redisson.api.RCollectionAsync;
 import org.redisson.api.RFuture;
 import org.redisson.api.RLock;
 import org.redisson.api.RSetCache;
 import org.redisson.client.RedisClient;
 import org.redisson.client.protocol.decoder.ListScanResult;
-import org.redisson.client.protocol.decoder.ScanObjectEntry;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.transaction.operation.TransactionalOperation;
 import org.redisson.transaction.operation.set.AddCacheOperation;
@@ -41,17 +41,19 @@ import org.redisson.transaction.operation.set.RemoveCacheOperation;
 public class TransactionalSetCache<V> extends BaseTransactionalSet<V> {
 
     private final RSetCache<V> set;
+    private final String transactionId;
     
     public TransactionalSetCache(CommandAsyncExecutor commandExecutor, long timeout, List<TransactionalOperation> operations,
-            RSetCache<V> set) {
+            RSetCache<V> set, String transactionId) {
         super(commandExecutor, timeout, operations, set);
         this.set = set;
+        this.transactionId = transactionId;
     }
 
     @Override
-    protected ListScanResult<ScanObjectEntry> scanIteratorSource(String name, RedisClient client, long startPos,
-            String pattern) {
-        return ((RedissonSetCache<?>)set).scanIterator(name, client, startPos, pattern);
+    protected ListScanResult<Object> scanIteratorSource(String name, RedisClient client, long startPos,
+            String pattern, int count) {
+        return ((RedissonSetCache<?>)set).scanIterator(name, client, startPos, pattern, count);
     }
 
     @Override
@@ -60,27 +62,28 @@ public class TransactionalSetCache<V> extends BaseTransactionalSet<V> {
     }
     
     public RFuture<Boolean> addAsync(V value, long ttl, TimeUnit ttlUnit) {
-        return addAsync(value, new AddCacheOperation(set, value, ttl, ttlUnit));
+        return addAsync(value, new AddCacheOperation(set, value, ttl, ttlUnit, transactionId));
     }
     
     @Override
     protected TransactionalOperation createAddOperation(final V value) {
-        return new AddCacheOperation(set, value);
+        return new AddCacheOperation(set, value, transactionId);
     }
     
     @Override
     protected MoveOperation createMoveOperation(final String destination, final V value, final long threadId) {
         throw new UnsupportedOperationException();
     }
-
-    @Override
-    protected RLock getLock(V value) {
-        return set.getLock(value);
-    }
     
     @Override
     protected TransactionalOperation createRemoveOperation(final Object value) {
-        return new RemoveCacheOperation(set, value);
+        return new RemoveCacheOperation(set, value, transactionId);
+    }
+
+    @Override
+    protected RLock getLock(RCollectionAsync<V> set, V value) {
+        String lockName = ((RedissonSetCache<V>)set).getLockName(value, "lock");
+        return new RedissonTransactionalLock(commandExecutor, lockName, transactionId);
     }
     
 }

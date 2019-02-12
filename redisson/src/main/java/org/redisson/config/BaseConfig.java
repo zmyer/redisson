@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -226,12 +226,7 @@ class BaseConfig<T extends BaseConfig<T>> {
         return clientName;
     }
 
-    /**
-     * Ping timeout used in <code>Node.ping</code> and <code>Node.pingAll</code> operation
-     *
-     * @param pingTimeout - timeout in milliseconds
-     * @return config
-     */
+    @Deprecated
     public T setPingTimeout(int pingTimeout) {
         this.pingTimeout = pingTimeout;
         return (T) this;

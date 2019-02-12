@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,31 +105,67 @@ public class RemoteInvocationOptions implements Serializable {
         return executionTimeoutInMillis != null;
     }
 
+    /**
+     * Defines ACK timeout
+     * 
+     * @param ackTimeoutInMillis - timeout in milliseconds
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions expectAckWithin(long ackTimeoutInMillis) {
         this.ackTimeoutInMillis = ackTimeoutInMillis;
         return this;
     }
 
+    /**
+     * Defines ACK timeout
+     * 
+     * @param ackTimeout - timeout
+     * @param timeUnit - timeout unit
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions expectAckWithin(long ackTimeout, TimeUnit timeUnit) {
         this.ackTimeoutInMillis = timeUnit.toMillis(ackTimeout);
         return this;
     }
 
+    /**
+     * Specifies to not wait for ACK reply
+     * 
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions noAck() {
         ackTimeoutInMillis = null;
         return this;
     }
 
+    /**
+     * Defines execution timeout
+     * 
+     * @param executionTimeoutInMillis - timeout in milliseconds
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions expectResultWithin(long executionTimeoutInMillis) {
         this.executionTimeoutInMillis = executionTimeoutInMillis;
         return this;
     }
 
+    /**
+     * Defines execution timeout
+     * 
+     * @param executionTimeout - timeout
+     * @param timeUnit - timeout unit
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions expectResultWithin(long executionTimeout, TimeUnit timeUnit) {
         this.executionTimeoutInMillis = timeUnit.toMillis(executionTimeout);
         return this;
     }
 
+    /**
+     * Specifies to not wait for result
+     * 
+     * @return RemoteInvocationOptions object
+     */
     public RemoteInvocationOptions noResult() {
         executionTimeoutInMillis = null;
         return this;

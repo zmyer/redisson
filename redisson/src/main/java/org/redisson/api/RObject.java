@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.api;
 
+import java.util.concurrent.TimeUnit;
+
 import org.redisson.client.codec.Codec;
 
 /**
@@ -25,6 +27,52 @@ import org.redisson.client.codec.Codec;
  */
 public interface RObject extends RObjectAsync {
 
+    /**
+     * Returns size of object in Redis memory
+     * 
+     * @return size of object
+     */
+    long sizeInMemory();
+    
+    /**
+     * Restores object using its state returned by {@link #dump()} method.
+     * 
+     * @param state - state of object
+     */
+    void restore(byte[] state);
+    
+    /**
+     * Restores object using its state returned by {@link #dump()} method and set time to live for it.
+     * 
+     * @param state - state of object
+     * @param timeToLive - time to live of the object
+     * @param timeUnit - time unit
+     */
+    void restore(byte[] state, long timeToLive, TimeUnit timeUnit);
+    
+    /**
+     * Restores and replaces object if it already exists.
+     * 
+     * @param state - state of the object
+     */
+    void restoreAndReplace(byte[] state);
+
+    /**
+     * Restores and replaces object if it already exists and set time to live for it.
+     * 
+     * @param state - state of the object
+     * @param timeToLive - time to live of the object
+     * @param timeUnit - time unit
+     */
+    void restoreAndReplace(byte[] state, long timeToLive, TimeUnit timeUnit);
+    
+    /**
+     * Returns dump of object
+     * 
+     * @return dump
+     */
+    byte[] dump();
+    
     /**
      * Update the last access time of an object. 
      * 

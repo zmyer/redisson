@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package org.redisson.api;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -121,7 +120,7 @@ public interface RScheduledExecutorService extends RExecutorService, ScheduledEx
      * @param cronSchedule- cron schedule object
      * @return future object
      */
-    ScheduledFuture<?> schedule(Runnable task, CronSchedule cronSchedule);
+    RScheduledFuture<?> schedule(Runnable task, CronSchedule cronSchedule);
 
     /**
      * Use {@link #cancelTask(String)}

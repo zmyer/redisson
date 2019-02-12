@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.redisson.misc.URIBuilder;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.resolver.dns.DnsAddressResolverGroup;
+import io.netty.resolver.AddressResolverGroup;
 import io.netty.util.Timer;
 
 /**
@@ -41,7 +41,7 @@ public class RedisClientConfig {
     private Timer timer;
     private ExecutorService executor;
     private EventLoopGroup group;
-    private DnsAddressResolverGroup resolverGroup;
+    private AddressResolverGroup<InetSocketAddress> resolverGroup;
     private Class<? extends SocketChannel> socketChannelClass = NioSocketChannel.class;
     private int connectTimeout = 10000;
     private int commandTimeout = 10000;
@@ -51,6 +51,7 @@ public class RedisClientConfig {
     private String clientName;
     private boolean readOnly;
     private boolean keepPubSubOrder = true;
+    private boolean decodeInExecutor;
     private int pingConnectionInterval;
     private boolean keepAlive;
     private boolean tcpNoDelay;
@@ -92,6 +93,7 @@ public class RedisClientConfig {
         this.sslKeystorePassword = config.sslKeystorePassword;
         this.resolverGroup = config.resolverGroup;
         this.sslHostname = config.sslHostname;
+        this.decodeInExecutor = config.decodeInExecutor;
     }
     
     public String getSslHostname() {
@@ -262,6 +264,14 @@ public class RedisClientConfig {
         return this;
     }
 
+    public boolean isDecodeInExecutor() {
+        return decodeInExecutor;
+    }
+    public RedisClientConfig setDecodeInExecutor(boolean decodeInExecutor) {
+        this.decodeInExecutor = decodeInExecutor;
+        return this;
+    }
+
     public int getPingConnectionInterval() {
         return pingConnectionInterval;
     }    
@@ -286,10 +296,10 @@ public class RedisClientConfig {
         return this;
     }
 
-    public DnsAddressResolverGroup getResolverGroup() {
+    public AddressResolverGroup<InetSocketAddress> getResolverGroup() {
         return resolverGroup;
     }
-    public RedisClientConfig setResolverGroup(DnsAddressResolverGroup resolverGroup) {
+    public RedisClientConfig setResolverGroup(AddressResolverGroup<InetSocketAddress> resolverGroup) {
         this.resolverGroup = resolverGroup;
         return this;
     }

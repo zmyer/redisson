@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,6 +64,8 @@ public class SingleConnectionManager extends MasterSlaveConnectionManager {
         newconfig.setSubscriptionConnectionMinimumIdleSize(cfg.getSubscriptionConnectionMinimumIdleSize());
         newconfig.setReadMode(ReadMode.MASTER);
         newconfig.setSubscriptionMode(SubscriptionMode.MASTER);
+        newconfig.setKeepAlive(cfg.isKeepAlive());
+        
         return newconfig;
     }
 

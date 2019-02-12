@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,15 +29,17 @@ public class PubSubPatternMessageListener<V> implements RedisPubSubListener<V> {
 
     private final PatternMessageListener<V> listener;
     private final String name;
+    private final Class<V> type;
 
     public String getName() {
         return name;
     }
 
-    public PubSubPatternMessageListener(PatternMessageListener<V> listener, String name) {
+    public PubSubPatternMessageListener(Class<V> type, PatternMessageListener<V> listener, String name) {
         super();
         this.listener = listener;
         this.name = name;
+        this.type = type;
     }
 
     @Override
@@ -70,19 +72,19 @@ public class PubSubPatternMessageListener<V> implements RedisPubSubListener<V> {
     }
     
     @Override
-    public void onMessage(String channel, V message) {
+    public void onMessage(CharSequence channel, V message) {
     }
 
     @Override
-    public void onPatternMessage(String pattern, String channel, V message) {
+    public void onPatternMessage(CharSequence pattern, CharSequence channel, V message) {
         // could be subscribed to multiple channels
-        if (name.equals(pattern)) {
+        if (name.equals(pattern.toString()) && type.isInstance(message)) {
             listener.onMessage(pattern, channel, message);
         }
     }
 
     @Override
-    public boolean onStatus(PubSubType type, String channel) {
+    public boolean onStatus(PubSubType type, CharSequence channel) {
         return false;
     }
 

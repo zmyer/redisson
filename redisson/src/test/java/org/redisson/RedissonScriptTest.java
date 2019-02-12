@@ -31,7 +31,6 @@ public class RedissonScriptTest extends BaseTest {
             l = l + 1;
         }
 
-        StringCodec codec = new StringCodec();
         String max = "'[DENY" + "\t" + "TESTREDISSON" + "\t" + "1506524856099'";
         String min = "'[DENY" + "\t" + "TESTREDISSON" + "\t" + "1506524856000'";
          String luaScript1= "local d = {}; d[1] = redis.call('zrevrangebylex','ABCD17436'," +max+","+min+",'LIMIT',0,5); ";
@@ -39,29 +38,28 @@ public class RedissonScriptTest extends BaseTest {
          luaScript1=  luaScript1 + " d[3] = redis.call('zrevrangebylex','ABCD17436'," +max+","+min+",'LIMIT',0,25); ";
          luaScript1 = luaScript1 + " return d;";
      
-        Future<Object> r1 = redisson.getScript().evalAsync(RScript.Mode.READ_ONLY, codec,
+         List<List<Object>> objs = redisson.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_ONLY,
                 luaScript1,
                 RScript.ReturnType.MULTI, Collections.emptyList());            
-        List<List<Object>> obj1 = (List<List<Object>>) r1.get();
         
-        assertThat(obj1).hasSize(3);
-        assertThat(obj1.get(0)).hasSize(5);
-        assertThat(obj1.get(1)).hasSize(15);
-        assertThat(obj1.get(2)).hasSize(25);
+        assertThat(objs).hasSize(3);
+        assertThat(objs.get(0)).hasSize(5);
+        assertThat(objs.get(1)).hasSize(15);
+        assertThat(objs.get(2)).hasSize(25);
     }
     
     @Test
     public void testEval() {
-        RScript script = redisson.getScript();
-        List<Object> res = script.eval(RScript.Mode.READ_ONLY, "return {1,2,3.3333,'\"foo\"',nil,'bar'}", RScript.ReturnType.MULTI, Collections.emptyList());
-        assertThat(res).containsExactly(1L, 2L, 3L, "foo");
+        RScript script = redisson.getScript(StringCodec.INSTANCE);
+        List<Object> res = script.eval(RScript.Mode.READ_ONLY, "return {'1','2','3.3333','foo',nil,'bar'}", RScript.ReturnType.MULTI, Collections.emptyList());
+        assertThat(res).containsExactly("1", "2", "3.3333", "foo");
     }
 
     @Test
     public void testEvalAsync() {
-        RScript script = redisson.getScript();
-        RFuture<List<Object>> res = script.evalAsync(RScript.Mode.READ_ONLY, "return {1,2,3.3333,'\"foo\"',nil,'bar'}", RScript.ReturnType.MULTI, Collections.emptyList());
-        assertThat(res.awaitUninterruptibly().getNow()).containsExactly(1L, 2L, 3L, "foo");
+        RScript script = redisson.getScript(StringCodec.INSTANCE);
+        RFuture<List<Object>> res = script.evalAsync(RScript.Mode.READ_ONLY, "return {'1','2','3.3333','foo',nil,'bar'}", RScript.ReturnType.MULTI, Collections.emptyList());
+        assertThat(res.awaitUninterruptibly().getNow()).containsExactly("1", "2", "3.3333", "foo");
     }
     
     @Test

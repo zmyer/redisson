@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,11 @@ import java.util.List;
 
 import org.redisson.client.protocol.decoder.DecoderState;
 
+/**
+ * 
+ * @author Nikita Koksharov
+ *
+ */
 public class State {
 
     private int batchIndex;
@@ -28,27 +33,14 @@ public class State {
 
     private int level = -1;
     private List<StateLevel> levels;
-    private final boolean makeCheckpoint;
 
-    public State(boolean makeCheckpoint) {
-        this.makeCheckpoint = makeCheckpoint;
+    public State() {
     }
 
-    public boolean isMakeCheckpoint() {
-        return makeCheckpoint;
+    public int getLevel() {
+        return level;
     }
 
-    public void resetLevel() {
-        level = -1;
-        levels.clear();
-    }
-    public int decLevel() {
-        return --level;
-    }
-    public int incLevel() {
-        return ++level;
-    }
-    
     public StateLevel getLastLevel() {
         if (levels == null || levels.isEmpty()) {
             return null;
@@ -56,12 +48,26 @@ public class State {
         return levels.get(level);
     }
     
+    public void incLevel() {
+        level++;
+    }
+    
+    public void decLevel() {
+        level--;
+    }
+    
     public void addLevel(StateLevel stateLevel) {
         if (levels == null) {
             levels = new ArrayList<StateLevel>(2);
         }
         levels.add(stateLevel);
+        level++;
     }
+    public void removeLastLevel() {
+        levels.remove(level);
+        level--;
+    }
+    
     public List<StateLevel> getLevels() {
         if (levels == null) {
             return Collections.emptyList();

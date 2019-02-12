@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  */
 package org.redisson.client.codec;
 
+import org.redisson.cache.LocalCachedMessageCodec;
 import org.redisson.client.protocol.Decoder;
 import org.redisson.client.protocol.Encoder;
+import org.redisson.jcache.JCacheEventCodec;
 
 /**
  * 
@@ -25,6 +27,23 @@ import org.redisson.client.protocol.Encoder;
  */
 public abstract class BaseCodec implements Codec {
 
+    public static Codec copy(ClassLoader classLoader, Codec codec) {
+        if (codec instanceof StringCodec
+                || codec instanceof ByteArrayCodec
+                    || codec instanceof LocalCachedMessageCodec
+                        || codec instanceof BitSetCodec
+                            || codec instanceof JCacheEventCodec
+                                || codec == null) {
+            return codec;
+        }
+
+        try {
+            return codec.getClass().getConstructor(ClassLoader.class, codec.getClass()).newInstance(classLoader, codec);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+    
     @Override
     public Decoder<Object> getMapValueDecoder() {
         return getValueDecoder();
@@ -48,6 +67,11 @@ public abstract class BaseCodec implements Codec {
     @Override
     public ClassLoader getClassLoader() {
         return getClass().getClassLoader();
+    }
+
+    @Override
+    public String toString() {
+        return getClass().getName();
     }
     
 }

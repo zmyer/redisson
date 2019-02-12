@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,18 @@ package org.redisson.api;
 import java.util.List;
 
 /**
+ * Future object for submitted tasks in a batch
  * 
  * @author Nikita Koksharov
  *
  */
 public interface RExecutorBatchFuture extends RFuture<Void> {
 
+    /**
+     * Returns list of Future objects. Each Future object represents submitted task.
+     * 
+     * @return list
+     */
     List<RExecutorFuture<?>> getTaskFutures();
     
 }

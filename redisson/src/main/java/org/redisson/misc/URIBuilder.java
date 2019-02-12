@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,11 @@ import java.net.URI;
 public class URIBuilder {
 
     public static URI create(String uri) {
+        if (!uri.startsWith("redis://")
+                && !uri.startsWith("rediss://")) {
+            throw new IllegalArgumentException("Redis url should start with redis:// or rediss:// (for SSL connection)");
+        }
+        
         URI u = URI.create(uri);
         // Let's assuming most of the time it is OK.
         if (u.getHost() != null) {
@@ -59,14 +64,23 @@ public class URIBuilder {
             
             field.setAccessible(true);
             field.setLong(null, maskValue);
+        } catch (NoSuchFieldException e) {
+            // skip for Android platform
         } catch (Exception e) {
             throw new IOException(e);
         }
     }
-    
+
+    private static String trimIpv6Brackets(String host) {
+        if (host.startsWith("[") && host.endsWith("]")) {
+            return host.substring(1, host.length() - 1);
+        }
+        return host;
+    }
+
     public static boolean compare(InetSocketAddress entryAddr, URI addr) {
-        if (((entryAddr.getHostName() != null && entryAddr.getHostName().equals(addr.getHost()))
-                || entryAddr.getAddress().getHostAddress().equals(addr.getHost()))
+        if (((entryAddr.getHostName() != null && entryAddr.getHostName().equals(trimIpv6Brackets(addr.getHost())))
+                || entryAddr.getAddress().getHostAddress().equals(trimIpv6Brackets(addr.getHost())))
                 && entryAddr.getPort() == addr.getPort()) {
             return true;
         }

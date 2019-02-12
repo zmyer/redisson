@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.redisson.client.codec.DoubleCodec;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.RedisStrictCommand;
-import org.redisson.client.protocol.convertor.SingleConvertor;
+import org.redisson.client.protocol.convertor.Convertor;
 import org.redisson.command.CommandAsyncExecutor;
 
 /**
@@ -110,7 +110,7 @@ public class RedissonAtomicDouble extends RedissonExpirable implements RAtomicDo
 
     @Override
     public RFuture<Double> getAndAddAsync(final double delta) {
-        return commandExecutor.writeAsync(getName(), StringCodec.INSTANCE, new RedisStrictCommand<Double>("INCRBYFLOAT", new SingleConvertor<Double>() {
+        return commandExecutor.writeAsync(getName(), StringCodec.INSTANCE, new RedisStrictCommand<Double>("INCRBYFLOAT", new Convertor<Double>() {
             @Override
             public Double convert(Object obj) {
                 return Double.valueOf(obj.toString()) - delta;

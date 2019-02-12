@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@ package org.redisson.tomcat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.UUID;
 
 import javax.servlet.http.HttpSession;
 
@@ -37,6 +39,8 @@ import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.listener.MessageListener;
 import org.redisson.client.codec.Codec;
+import org.redisson.client.codec.StringCodec;
+import org.redisson.codec.CompositeCodec;
 import org.redisson.config.Config;
 
 /**
@@ -51,15 +55,19 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     public enum UpdateMode {DEFAULT, AFTER_REQUEST}
     
     private final Log log = LogFactory.getLog(RedissonSessionManager.class);
-
+    
     protected LifecycleSupport lifecycle = new LifecycleSupport(this);
     
     private RedissonClient redisson;
     private String configPath;
-    private ReadMode readMode = ReadMode.MEMORY;
+    private ReadMode readMode = ReadMode.REDIS;
     private UpdateMode updateMode = UpdateMode.DEFAULT;
     private String keyPrefix = "";
-    
+
+    private final String nodeId = UUID.randomUUID().toString();
+
+    public String getNodeId() { return nodeId; }
+
     public String getUpdateMode() {
         return updateMode.toString();
     }
@@ -75,7 +83,7 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     public void setReadMode(String readMode) {
         this.readMode = ReadMode.valueOf(readMode);
     }
-
+    
     public void setConfigPath(String configPath) {
         this.configPath = configPath;
     }
@@ -96,7 +104,7 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     public int getRejectedSessions() {
         return 0;
     }
-
+    
     @Override
     public void load() throws ClassNotFoundException, IOException {
     }
@@ -137,40 +145,55 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
             sessionId = generateSessionId();
         }
         
+        session.setManager(this);
         session.setId(sessionId);
-        session.save();
         
         return session;
     }
 
     public RMap<String, Object> getMap(String sessionId) {
         String separator = keyPrefix == null || keyPrefix.isEmpty() ? "" : ":";
-        final String name = keyPrefix + separator + "redisson:tomcat_session:" + sessionId;
-        return redisson.getMap(name);
+        String name = keyPrefix + separator + "redisson:tomcat_session:" + sessionId;
+        return redisson.getMap(name, new CompositeCodec(StringCodec.INSTANCE, redisson.getConfig().getCodec()));
     }
-    
-    public RTopic<AttributeMessage> getTopic() {
-        return redisson.getTopic("redisson:tomcat_session_updates");
+
+    public RTopic getTopic() {
+        String separator = keyPrefix == null || keyPrefix.isEmpty() ? "" : ":";
+        final String name = keyPrefix + separator + "redisson:tomcat_session_updates:" + ((Context) getContainer()).getName();
+        return redisson.getTopic(name);
     }
     
     @Override
     public Session findSession(String id) throws IOException {
         Session result = super.findSession(id);
-        if (result == null && id != null) {
-            Map<String, Object> attrs = getMap(id).readAllMap();
-            
-            if (attrs.isEmpty() || !Boolean.valueOf(String.valueOf(attrs.get("session:isValid")))) {
-                log.info("Session " + id + " can't be found");
-                return null;
+        if (result == null) {
+            if (id != null) {
+                Map<String, Object> attrs = new HashMap<String, Object>();
+                try {
+                    if (readMode == ReadMode.MEMORY) {
+                        attrs = getMap(id).readAllMap();
+                    } else {
+                        attrs = getMap(id).getAll(RedissonSession.ATTRS);
+                    }
+                } catch (Exception e) {
+                    log.error("Can't read session object by id " + id, e);
+                }
+                
+                if (attrs.isEmpty() || !Boolean.valueOf(String.valueOf(attrs.get("session:isValid")))) {
+                    log.info("Session " + id + " can't be found");
+                    return null;
+                }
+                
+                RedissonSession session = (RedissonSession) createEmptySession();
+                session.setId(id);
+                session.setManager(this);
+                session.load(attrs);
+                
+                session.access();
+                session.endAccess();
+                return session;
             }
-            
-            RedissonSession session = (RedissonSession) createEmptySession();
-            session.setId(id);
-            session.load(attrs);
-            
-            session.access();
-            session.endAccess();
-            return session;
+            return null;
         }
 
         result.access();
@@ -182,6 +205,12 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     @Override
     public Session createEmptySession() {
         return new RedissonSession(this, readMode, updateMode);
+    }
+    
+    @Override
+    public void add(Session session) {
+        super.add(session);
+        ((RedissonSession)session).save();
     }
     
     @Override
@@ -201,20 +230,27 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     public void start() throws LifecycleException {
         redisson = buildClient();
         
+        final ClassLoader applicationClassLoader;
+        if (Thread.currentThread().getContextClassLoader() != null) {
+            applicationClassLoader = Thread.currentThread().getContextClassLoader();
+        } else {
+            applicationClassLoader = getClass().getClassLoader();
+        }
+        
         if (updateMode == UpdateMode.AFTER_REQUEST) {
             getEngine().getPipeline().addValve(new UpdateValve(this));
         }
         
         if (readMode == ReadMode.MEMORY) {
-            RTopic<AttributeMessage> updatesTopic = getTopic();
-            updatesTopic.addListener(new MessageListener<AttributeMessage>() {
+            RTopic updatesTopic = getTopic();
+            updatesTopic.addListener(AttributeMessage.class, new MessageListener<AttributeMessage>() {
                 
                 @Override
-                public void onMessage(String channel, AttributeMessage msg) {
+                public void onMessage(CharSequence channel, AttributeMessage msg) {
                     try {
                         // TODO make it thread-safe
                         RedissonSession session = (RedissonSession) RedissonSessionManager.super.findSession(msg.getSessionId());
-                        if (session != null) {
+                        if (session != null && !msg.getNodeId().equals(nodeId)) {
                             if (msg instanceof AttributeRemoveMessage) {
                                 session.superRemoveAttributeInternal(((AttributeRemoveMessage)msg).getName(), true);
                             }
@@ -225,17 +261,17 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
                             
                             if (msg instanceof AttributesPutAllMessage) {
                                 AttributesPutAllMessage m = (AttributesPutAllMessage) msg;
-                                for (Entry<String, Object> entry : m.getAttrs().entrySet()) {
+                                for (Entry<String, Object> entry : m.getAttrs(applicationClassLoader).entrySet()) {
                                     session.superSetAttribute(entry.getKey(), entry.getValue(), true);
                                 }
                             }
                             
                             if (msg instanceof AttributeUpdateMessage) {
                                 AttributeUpdateMessage m = (AttributeUpdateMessage)msg;
-                                session.superSetAttribute(m.getName(), m.getValue(), true);
+                                session.superSetAttribute(m.getName(), m.getValue(applicationClassLoader), true);
                             }
                         }
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         log.error("Can't handle topic message", e);
                     }
                 }
@@ -244,7 +280,7 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
         
         lifecycle.fireLifecycleEvent(START_EVENT, null);
     }
-    
+
     protected RedissonClient buildClient() throws LifecycleException {
         Config config = null;
         try {
@@ -258,8 +294,17 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
                 throw new LifecycleException("Can't parse yaml config " + configPath, e1);
             }
         }
-
+        
         try {
+            try {
+            Config c = new Config(config);
+            Codec codec = c.getCodec().getClass().getConstructor(ClassLoader.class)
+                            .newInstance(Thread.currentThread().getContextClassLoader());
+            config.setCodec(codec);
+            } catch (Exception e) {
+                throw new IllegalStateException("Unable to initialize codec with ClassLoader parameter", e);
+            }
+            
             return Redisson.create(config);
         } catch (Exception e) {
             throw new LifecycleException(e);
@@ -269,25 +314,31 @@ public class RedissonSessionManager extends ManagerBase implements Lifecycle {
     @Override
     public void stop() throws LifecycleException {
         try {
-            if (redisson != null) {
-                redisson.shutdown();
-            }
+            shutdownRedisson();
         } catch (Exception e) {
             throw new LifecycleException(e);
         }
         
         lifecycle.fireLifecycleEvent(STOP_EVENT, null);
     }
-    
+
+    protected void shutdownRedisson() {
+        if (redisson != null) {
+            redisson.shutdown();
+        }
+    }
+
     public void store(HttpSession session) throws IOException {
         if (session == null) {
             return;
         }
         
         if (updateMode == UpdateMode.AFTER_REQUEST) {
-            RedissonSession sess = (RedissonSession) findSession(session.getId());
-            sess.save();
+            RedissonSession sess = (RedissonSession) super.findSession(session.getId());
+            if (sess != null) {
+                sess.save();
+            }
         }
     }
-
+    
 }

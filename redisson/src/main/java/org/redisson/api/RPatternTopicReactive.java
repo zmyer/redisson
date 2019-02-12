@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,18 @@ package org.redisson.api;
 
 import java.util.List;
 
-import org.reactivestreams.Publisher;
 import org.redisson.api.listener.PatternMessageListener;
 import org.redisson.api.listener.PatternStatusListener;
 
+import reactor.core.publisher.Mono;
+
 /**
- * Distributed topic. Messages are delivered to all message listeners across Redis cluster.
+ * Reactive interface for Pattern based observer for Publish Subscribe object.
  *
  * @author Nikita Koksharov
  *
- * @param <M> the type of message object
  */
-public interface RPatternTopicReactive<M> {
+public interface RPatternTopicReactive {
 
     /**
      * Get topic channel patterns
@@ -41,12 +41,14 @@ public interface RPatternTopicReactive<M> {
      * Subscribes to this topic.
      * <code>MessageListener.onMessage</code> is called when any message
      * is published on this topic.
-     *
+     * 
+     * @param <T> type of message
+     * @param type - type of message
      * @param listener - message listener
      * @return local JVM unique listener id
      * @see org.redisson.api.listener.MessageListener
      */
-    Publisher<Integer> addListener(PatternMessageListener<M> listener);
+    <T> Mono<Integer> addListener(Class<T> type, PatternMessageListener<T> listener);
 
     /**
      * Subscribes to status changes of this topic
@@ -55,7 +57,7 @@ public interface RPatternTopicReactive<M> {
      * @return local JVM unique listener id
      * @see org.redisson.api.listener.StatusListener
      */
-    Publisher<Integer> addListener(PatternStatusListener listener);
+    Mono<Integer> addListener(PatternStatusListener listener);
 
     /**
      * Removes the listener by <code>id</code> for listening this topic

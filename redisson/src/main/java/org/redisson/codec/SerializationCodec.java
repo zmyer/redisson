@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
-import org.redisson.client.codec.Codec;
+import org.redisson.client.codec.BaseCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
 import org.redisson.client.protocol.Encoder;
@@ -34,7 +34,7 @@ import io.netty.buffer.ByteBufOutputStream;
  * @author Nikita Koksharov
  *
  */
-public class SerializationCodec implements Codec {
+public class SerializationCodec extends BaseCodec {
 
     private final Decoder<Object> decoder = new Decoder<Object>() {
         @Override
@@ -83,27 +83,11 @@ public class SerializationCodec implements Codec {
     public SerializationCodec(ClassLoader classLoader) {
         this.classLoader = classLoader;
     }
+
+    public SerializationCodec(ClassLoader classLoader, SerializationCodec codec) {
+        this.classLoader = classLoader;
+    }
     
-    @Override
-    public Decoder<Object> getMapValueDecoder() {
-        return getValueDecoder();
-    }
-
-    @Override
-    public Encoder getMapValueEncoder() {
-        return getValueEncoder();
-    }
-
-    @Override
-    public Decoder<Object> getMapKeyDecoder() {
-        return getValueDecoder();
-    }
-
-    @Override
-    public Encoder getMapKeyEncoder() {
-        return getValueEncoder();
-    }
-
     @Override
     public Decoder<Object> getValueDecoder() {
         return decoder;

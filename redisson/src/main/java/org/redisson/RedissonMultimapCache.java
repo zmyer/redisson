@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.redisson;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.redisson.api.RFuture;
@@ -60,6 +61,11 @@ public class RedissonMultimapCache<K> {
               + "end",
             Arrays.<Object>asList(object.getName(), timeoutSetName), 
             ttlTimeout, ((RedissonObject)object).encodeMapKey(key));
+    }
+    
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(object.getName(), timeoutSetName);
+        return ((RedissonObject)object).sizeInMemoryAsync(keys);
     }
     
     public RFuture<Boolean> deleteAsync() {

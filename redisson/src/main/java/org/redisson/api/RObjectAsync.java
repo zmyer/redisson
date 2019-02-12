@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.api;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Base interface for all Redisson objects
  *
@@ -23,6 +25,56 @@ package org.redisson.api;
  */
 public interface RObjectAsync {
 
+    /**
+     * Returns size of object in Redis memory
+     * 
+     * @return size of object
+     */
+    RFuture<Long> sizeInMemoryAsync();
+    
+    /**
+     * Restores object using its state returned by {@link #dumpAsync()} method.
+     * 
+     * @param state - state of object
+     * @return void
+     */
+    RFuture<Void> restoreAsync(byte[] state);
+    
+    /**
+     * Restores object using its state returned by {@link #dumpAsync()} method and set time to live for it.
+     * 
+     * @param state - state of object
+     * @param timeToLive - time to live of the object
+     * @param timeUnit - time unit
+     * @return void
+     */
+    RFuture<Void> restoreAsync(byte[] state, long timeToLive, TimeUnit timeUnit);
+    
+    /**
+     * Restores and replaces object if it already exists.
+     * 
+     * @param state - state of the object
+     * @return void
+     */
+    RFuture<Void> restoreAndReplaceAsync(byte[] state);
+    
+    /**
+     * Restores and replaces object if it already exists and set time to live for it.
+     * 
+     * @param state - state of the object
+     * @param timeToLive - time to live of the object
+     * @param timeUnit - time unit
+     * @return void
+     */
+    RFuture<Void> restoreAndReplaceAsync(byte[] state, long timeToLive, TimeUnit timeUnit);
+
+    /**
+     * Returns dump of object
+     * 
+     * @return dump
+     */
+    RFuture<byte[]> dumpAsync();
+    
     /**
      * Update the last access time of an object in async mode. 
      * 

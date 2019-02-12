@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,12 +66,8 @@ public class LoadBalancerManager {
         pubSubConnectionPool = new PubSubConnectionPool(config, connectionManager, entry);
     }
 
-    public void changeType(RedisClient redisClient, NodeType nodeType) {
-        ClientConnectionsEntry entry = getEntry(redisClient);
-        changeType(nodeType, entry);
-    }
-
-    protected void changeType(NodeType nodeType, ClientConnectionsEntry entry) {
+    public void changeType(InetSocketAddress address, NodeType nodeType) {
+        ClientConnectionsEntry entry = getEntry(address);
         if (entry != null) {
             if (connectionManager.isClusterMode()) {
                 entry.getClient().getConfig().setReadOnly(nodeType == NodeType.SLAVE && connectionManager.getConfig().getReadMode() != ReadMode.MASTER);
@@ -79,7 +75,7 @@ public class LoadBalancerManager {
             entry.setNodeType(nodeType);
         }
     }
-    
+
     public RFuture<Void> add(final ClientConnectionsEntry entry) {
         RPromise<Void> result = new RedissonPromise<Void>();
         
@@ -130,7 +126,6 @@ public class LoadBalancerManager {
         return unfreeze(entry, freezeReason);
     }
 
-    
     public boolean unfreeze(ClientConnectionsEntry entry, FreezeReason freezeReason) {
         synchronized (entry) {
             if (!entry.isFreezed()) {
@@ -142,6 +137,9 @@ public class LoadBalancerManager {
                 entry.resetFirstFail();
                 entry.setFreezed(false);
                 entry.setFreezeReason(null);
+                
+                slaveConnectionPool.initConnections(entry);
+                pubSubConnectionPool.initConnections(entry);
                 return true;
             }
         }
@@ -159,14 +157,20 @@ public class LoadBalancerManager {
     }
 
     public ClientConnectionsEntry freeze(ClientConnectionsEntry connectionEntry, FreezeReason freezeReason) {
-        if (connectionEntry == null) {
+        if (connectionEntry == null || (connectionEntry.isFailed() 
+                && connectionEntry.getFreezeReason() == FreezeReason.RECONNECT
+                    && freezeReason == FreezeReason.RECONNECT)) {
             return null;
         }
 
         synchronized (connectionEntry) {
             // only RECONNECT freeze reason could be replaced
             if (connectionEntry.getFreezeReason() == null
-                    || connectionEntry.getFreezeReason() == FreezeReason.RECONNECT) {
+                    || connectionEntry.getFreezeReason() == FreezeReason.RECONNECT
+                        || (freezeReason == FreezeReason.MANAGER 
+                                && connectionEntry.getFreezeReason() != FreezeReason.MANAGER 
+                                    && connectionEntry.getNodeType() == NodeType.SLAVE
+                                    )) {
                 connectionEntry.setFreezed(true);
                 connectionEntry.setFreezeReason(freezeReason);
                 return connectionEntry;
@@ -200,7 +204,7 @@ public class LoadBalancerManager {
         return getEntry(redisClient) != null;
     }
 
-    protected ClientConnectionsEntry getEntry(URI addr) {
+    private ClientConnectionsEntry getEntry(URI addr) {
         for (ClientConnectionsEntry entry : client2Entry.values()) {
             InetSocketAddress entryAddr = entry.getClient().getAddr();
             if (URIBuilder.compare(entryAddr, addr)) {
@@ -210,7 +214,7 @@ public class LoadBalancerManager {
         return null;
     }
     
-    protected ClientConnectionsEntry getEntry(InetSocketAddress address) {
+    private ClientConnectionsEntry getEntry(InetSocketAddress address) {
         for (ClientConnectionsEntry entry : client2Entry.values()) {
             InetSocketAddress addr = entry.getClient().getAddr();
             if (addr.getAddress().equals(address.getAddress()) && addr.getPort() == address.getPort()) {

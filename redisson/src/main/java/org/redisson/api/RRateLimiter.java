@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ public interface RRateLimiter extends RRateLimiterAsync, RObject {
      * @param rate - rate
      * @param rateInterval - rate time interval
      * @param rateIntervalUnit - rate time interval unit
-     * @return
+     * @return {@code true} if rate was set and {@code false}
+     *         otherwise
      */
     boolean trySetRate(RateType mode, long rate, long rateInterval, RateIntervalUnit rateIntervalUnit);
     
@@ -85,7 +86,7 @@ public interface RRateLimiter extends RRateLimiterAsync, RObject {
      * and returns immediately, reducing the number of available permits 
      * by the given amount.
      * 
-     * @param permits
+     * @param permits the number of permits to acquire
      */
     void acquire(long permits);
     

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,12 @@ public class MapReplaceOperation extends MapOperation {
     public MapReplaceOperation() {
     }
     
-    public MapReplaceOperation(RMap<?, ?> map, Object key, Object value, Object oldValue) {
-        super(map, key, value, oldValue);
+    public MapReplaceOperation(RMap<?, ?> map, Object key, Object value, Object oldValue, String transactionId) {
+        super(map, key, value, oldValue, transactionId);
     }
     
-    public MapReplaceOperation(RMap<?, ?> map, Object key, Object value) {
-        super(map, key, value);
+    public MapReplaceOperation(RMap<?, ?> map, Object key, Object value, String transactionId) {
+        super(map, key, value, transactionId);
     }
 
     @Override

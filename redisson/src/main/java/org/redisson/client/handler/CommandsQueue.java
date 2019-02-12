@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,12 @@ import java.util.List;
 import java.util.Queue;
 import java.util.regex.Pattern;
 
+import org.redisson.client.ChannelName;
 import org.redisson.client.WriteRedisConnectionException;
 import org.redisson.client.protocol.CommandData;
 import org.redisson.client.protocol.QueueCommand;
 import org.redisson.client.protocol.QueueCommandHolder;
+import org.redisson.misc.LogHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,8 +65,19 @@ public class CommandsQueue extends ChannelDuplexHandler {
     };
 
     public void sendNextCommand(Channel channel) {
-        channel.attr(CommandsQueue.CURRENT_COMMAND).set(null);
-        queue.poll();
+        QueueCommand command = channel.attr(CommandsQueue.CURRENT_COMMAND).getAndSet(null);
+        if (command != null) {
+            queue.poll();
+        } else {
+            QueueCommandHolder c = queue.peek();
+            if (c != null) {
+                QueueCommand data = c.getCommand();
+                List<CommandData<Object, Object>> pubSubOps = data.getPubSubOperations();
+                if (!pubSubOps.isEmpty()) {
+                    queue.poll();
+                }
+            }
+        }
         sendData(channel);
     }
 
@@ -77,7 +90,8 @@ public class CommandsQueue extends ChannelDuplexHandler {
             }
             
             command.getChannelPromise().tryFailure(
-                    new WriteRedisConnectionException("Can't write command: " + command.getCommand() + " to channel: " + ctx.channel()));
+                    new WriteRedisConnectionException("Channel has been closed! Can't write command: " 
+                                + LogHelper.toString(command.getCommand()) + " to channel: " + ctx.channel()));
         }
         
         super.channelInactive(ctx);
@@ -107,7 +121,7 @@ public class CommandsQueue extends ChannelDuplexHandler {
             if (!pubSubOps.isEmpty()) {
                 for (CommandData<Object, Object> cd : pubSubOps) {
                     for (Object channel : cd.getParams()) {
-                        ch.pipeline().get(CommandPubSubDecoder.class).addPubSubCommand(channel.toString(), cd);
+                        ch.pipeline().get(CommandPubSubDecoder.class).addPubSubCommand((ChannelName) channel, cd);
                     }
                 }
             } else {

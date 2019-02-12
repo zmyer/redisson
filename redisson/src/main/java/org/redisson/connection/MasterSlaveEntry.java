@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,9 @@ package org.redisson.connection;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.redisson.api.NodeType;
@@ -33,7 +30,6 @@ import org.redisson.client.RedisPubSubConnection;
 import org.redisson.client.protocol.CommandData;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.cluster.ClusterConnectionManager;
-import org.redisson.cluster.ClusterSlotRange;
 import org.redisson.config.MasterSlaveServersConfig;
 import org.redisson.config.ReadMode;
 import org.redisson.config.SubscriptionMode;
@@ -46,6 +42,7 @@ import org.redisson.misc.RPromise;
 import org.redisson.misc.RedissonPromise;
 import org.redisson.misc.TransferListener;
 import org.redisson.misc.URIBuilder;
+import org.redisson.pubsub.PubSubConnectionEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,11 +63,12 @@ public class MasterSlaveEntry {
     LoadBalancerManager slaveBalancer;
     ClientConnectionsEntry masterEntry;
 
+    int references;
+    
     final MasterSlaveServersConfig config;
     final ConnectionManager connectionManager;
 
     final MasterConnectionPool writeConnectionPool;
-    final Set<Integer> slots = new HashSet<Integer>();
     
     final MasterPubSubConnectionPool pubSubConnectionPool;
 
@@ -78,12 +76,7 @@ public class MasterSlaveEntry {
     
     String sslHostname;
     
-    public MasterSlaveEntry(Set<ClusterSlotRange> slotRanges, ConnectionManager connectionManager, MasterSlaveServersConfig config) {
-        for (ClusterSlotRange clusterSlotRange : slotRanges) {
-            for (int i = clusterSlotRange.getStartSlot(); i < clusterSlotRange.getEndSlot() + 1; i++) {
-                slots.add(i);
-            }
-        }
+    public MasterSlaveEntry(ConnectionManager connectionManager, MasterSlaveServersConfig config) {
         this.connectionManager = connectionManager;
         this.config = config;
 
@@ -134,6 +127,7 @@ public class MasterSlaveEntry {
             @Override
             public void operationComplete(Future<InetSocketAddress> future) throws Exception {
                 if (!future.isSuccess()) {
+                    client.shutdownAsync();
                     result.tryFailure(future.cause());
                     return;
                 }
@@ -145,8 +139,8 @@ public class MasterSlaveEntry {
                         config.getSubscriptionConnectionMinimumIdleSize(),
                         config.getSubscriptionConnectionPoolSize(), 
                         connectionManager, 
-                                NodeType.MASTER);
-                
+                                        NodeType.MASTER);
+        
                 int counter = 1;
                 if (config.getSubscriptionMode() == SubscriptionMode.MASTER) {
                     counter++;
@@ -194,6 +188,10 @@ public class MasterSlaveEntry {
     }
     
     private boolean slaveDown(ClientConnectionsEntry entry) {
+        if (entry.isMasterForRead()) {
+            return false;
+        }
+        
         // add master as slave if no more slaves available
         if (!config.checkSkipSlavesInit() && slaveBalancer.getAvailableClients() == 0) {
             if (slaveBalancer.unfreeze(masterEntry.getClient().getAddr(), FreezeReason.SYSTEM)) {
@@ -203,42 +201,33 @@ public class MasterSlaveEntry {
         
         entry.reset();
         
-        closeConnections(entry);
+        for (RedisConnection connection : entry.getAllConnections()) {
+            connection.closeAsync();
+            reattachBlockingQueue(connection);
+        }
+        while (true) {
+            RedisConnection connection = entry.pollConnection();
+            if (connection == null) {
+                break;
+            }
+        }
+        entry.getAllConnections().clear();
         
         for (RedisPubSubConnection connection : entry.getAllSubscribeConnections()) {
+            connection.closeAsync();
             connectionManager.getSubscribeService().reattachPubSub(connection);
+        }
+        while (true) {
+            RedisConnection connection = entry.pollSubscribeConnection();
+            if (connection == null) {
+                break;
+            }
         }
         entry.getAllSubscribeConnections().clear();
         
         return true;
     }
 
-    private void closeConnections(ClientConnectionsEntry entry) {
-        // close all connections
-        while (true) {
-            final RedisConnection connection = entry.pollConnection();
-            if (connection == null) {
-                break;
-            }
-           
-            connection.closeAsync().addListener(new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture future) throws Exception {
-                    reattachBlockingQueue(connection);
-                }
-            });
-        }
-
-        // close all pub/sub connections
-        while (true) {
-            RedisPubSubConnection connection = entry.pollSubscribeConnection();
-            if (connection == null) {
-                break;
-            }
-            connection.closeAsync();
-        }
-    }
-    
     private void reattachBlockingQueue(RedisConnection connection) {
         final CommandData<?, ?> commandData = connection.getCurrentCommand();
 
@@ -296,7 +285,7 @@ public class MasterSlaveEntry {
     public boolean hasSlave(URI addr) {
         return slaveBalancer.contains(addr);
     }
-    
+
     public int getAvailableClients() {
         return slaveBalancer.getAvailableClients();
     }
@@ -318,7 +307,7 @@ public class MasterSlaveEntry {
                 if (!future.isSuccess()) {
                     result.tryFailure(future.cause());
                     return;
-                }
+    }
 
                 ClientConnectionsEntry entry = new ClientConnectionsEntry(client,
                         config.getSlaveConnectionMinimumIdleSize(),
@@ -332,6 +321,14 @@ public class MasterSlaveEntry {
                     }
                 }
                 RFuture<Void> addFuture = slaveBalancer.add(entry);
+                addFuture.addListener(new FutureListener<Void>() {
+                    @Override
+                    public void operationComplete(Future<Void> future) throws Exception {
+                        if (!future.isSuccess()) {
+                            client.shutdownAsync();
+                        }
+                    }
+                });
                 addFuture.addListener(new TransferListener<Void>(result));
             }
         });
@@ -344,16 +341,16 @@ public class MasterSlaveEntry {
     }
     
     private RFuture<Void> addSlave(URI address, final boolean freezed, final NodeType nodeType) {
-        RedisClient client = connectionManager.createClient(NodeType.SLAVE, address, sslHostname);
+        RedisClient client = connectionManager.createClient(nodeType, address, sslHostname);
         return addSlave(client, freezed, nodeType);
     }
 
-    public ClientConnectionsEntry getSlaveEntry(RedisClient client) {
-        return slaveBalancer.getEntry(client);
-    }
-    
     public Collection<ClientConnectionsEntry> getAllEntries() {
         return slaveBalancer.getEntries();
+    }
+    
+    public ClientConnectionsEntry getEntry(RedisClient redisClient) {
+        return slaveBalancer.getEntry(redisClient);
     }
     
     public RedisClient getClient() {
@@ -441,7 +438,13 @@ public class MasterSlaveEntry {
             @Override
             public void operationComplete(Future<RedisClient> future) throws Exception {
                 if (!future.isSuccess()) {
-                    log.error("Can't change master to: {}", address);
+                    if (oldMaster != masterEntry) {
+                        writeConnectionPool.remove(masterEntry);
+                        pubSubConnectionPool.remove(masterEntry);
+                        masterEntry.getClient().shutdownAsync();
+                        masterEntry = oldMaster;
+                    }
+                    log.error("Unable to change master from: " + oldMaster.getClient().getAddr() + " to: " + address, future.cause());
                     return;
                 }
 
@@ -453,8 +456,10 @@ public class MasterSlaveEntry {
                 oldMaster.freezeMaster(FreezeReason.MANAGER);
                 slaveDown(oldMaster);
 
-                slaveBalancer.changeType(oldMaster.getClient(), NodeType.SLAVE);
-                slaveBalancer.changeType(newMasterClient, NodeType.MASTER);
+                slaveBalancer.changeType(oldMaster.getClient().getAddr(), NodeType.SLAVE);
+                slaveBalancer.changeType(newMasterClient.getAddr(), NodeType.MASTER);
+                // freeze in slaveBalancer
+                slaveDown(oldMaster.getClient().getAddr(), FreezeReason.MANAGER);
 
                 // more than one slave available, so master can be removed from slaves
                 if (!config.checkSkipSlavesInit()
@@ -481,6 +486,10 @@ public class MasterSlaveEntry {
 
     public RFuture<RedisConnection> connectionWriteOp(RedisCommand<?> command) {
         return writeConnectionPool.get(command);
+    }
+
+    public RFuture<RedisConnection> redirectedConnectionWriteOp(RedisCommand<?> command, URI addr) {
+        return slaveBalancer.getConnection(command, addr);
     }
 
     public RFuture<RedisConnection> connectionReadOp(RedisCommand<?> command) {
@@ -529,16 +538,16 @@ public class MasterSlaveEntry {
         slaveBalancer.returnConnection(connection);
     }
 
-    public void addSlotRange(Integer range) {
-        slots.add(range);
+    public void incReference() {
+        references++;
     }
 
-    public void removeSlotRange(Integer range) {
-        slots.remove(range);
+    public int decReference() {
+        return --references;
     }
 
-    public Set<Integer> getSlotRanges() {
-        return slots;
+    public int getReferences() {
+        return references;
     }
 
     @Override

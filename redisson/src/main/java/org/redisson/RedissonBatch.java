@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,9 +39,11 @@ import org.redisson.api.RMultimapAsync;
 import org.redisson.api.RMultimapCacheAsync;
 import org.redisson.api.RQueueAsync;
 import org.redisson.api.RScoredSortedSetAsync;
+import org.redisson.api.RScript;
 import org.redisson.api.RScriptAsync;
 import org.redisson.api.RSetAsync;
 import org.redisson.api.RSetCacheAsync;
+import org.redisson.api.RStreamAsync;
 import org.redisson.api.RTopicAsync;
 import org.redisson.client.codec.Codec;
 import org.redisson.command.CommandBatchService;
@@ -117,13 +119,13 @@ public class RedissonBatch implements RBatch {
     }
 
     @Override
-    public <M> RTopicAsync<M> getTopic(String name) {
-        return new RedissonTopic<M>(executorService, name);
+    public RTopicAsync getTopic(String name) {
+        return new RedissonTopic(executorService, name);
     }
 
     @Override
-    public <M> RTopicAsync<M> getTopic(String name, Codec codec) {
-        return new RedissonTopic<M>(codec, executorService, name);
+    public RTopicAsync getTopic(String name, Codec codec) {
+        return new RedissonTopic(codec, executorService, name);
     }
 
     @Override
@@ -209,6 +211,11 @@ public class RedissonBatch implements RBatch {
     @Override
     public RScriptAsync getScript() {
         return new RedissonScript(executorService);
+    }
+    
+    @Override
+    public RScript getScript(Codec codec) {
+        return new RedissonScript(executorService, codec);
     }
 
     @Override
@@ -324,6 +331,16 @@ public class RedissonBatch implements RBatch {
 
     protected void enableRedissonReferenceSupport(Redisson redisson) {
         this.executorService.enableRedissonReferenceSupport(redisson);
+    }
+
+    @Override
+    public <K, V> RStreamAsync<K, V> getStream(String name) {
+        return new RedissonStream<K, V>(executorService, name);
+    }
+
+    @Override
+    public <K, V> RStreamAsync<K, V> getStream(String name, Codec codec) {  
+        return new RedissonStream<K, V>(codec, executorService, name);
     }
 
 }

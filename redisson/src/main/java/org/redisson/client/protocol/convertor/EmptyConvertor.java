@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,13 @@
  */
 package org.redisson.client.protocol.convertor;
 
-public class EmptyConvertor<R> extends SingleConvertor<R> {
+/**
+ * 
+ * @author Nikita Koksharov
+ *
+ * @param <R>
+ */
+public class EmptyConvertor<R> implements Convertor<R> {
 
     @Override
     public R convert(Object obj) {

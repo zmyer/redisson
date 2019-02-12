@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,17 @@
  */
 package org.redisson;
 
-import org.redisson.client.protocol.decoder.ScanObjectEntry;
-
 /**
  * 
  * @author Nikita Koksharov
  *
  * @param <V> value type
  */
-abstract class RedissonBaseIterator<V> extends BaseIterator<V, ScanObjectEntry> {
+abstract class RedissonBaseIterator<V> extends BaseIterator<V, Object> {
 
     @Override
-    protected V getValue(ScanObjectEntry entry) {
-        return (V) entry.getObj();
+    protected V getValue(Object entry) {
+        return (V) entry;
     }
     
 }

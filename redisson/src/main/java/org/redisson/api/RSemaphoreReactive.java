@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@ package org.redisson.api;
 
 import java.util.concurrent.TimeUnit;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
+ * Reactive interface for Semaphore object
  * 
  * @author Nikita Koksharov
  *
@@ -40,7 +41,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return {@code true} if a permit was acquired and {@code false}
      *         otherwise
      */
-    Publisher<Boolean> tryAcquire();
+    Mono<Boolean> tryAcquire();
     
     /**
      * Acquires the given number of permits only if all are available at the
@@ -57,7 +58,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return {@code true} if a permit was acquired and {@code false}
      *         otherwise
      */
-    Publisher<Boolean> tryAcquire(int permits);
+    Mono<Boolean> tryAcquire(int permits);
 
     /**
      * Acquires a permit from this semaphore.
@@ -68,7 +69,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return void
      *
      */
-    Publisher<Void> acquire();
+    Mono<Void> acquire();
 
     /**
      * Acquires the given number of permits, if they are available,
@@ -79,7 +80,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @throws IllegalArgumentException if {@code permits} is negative
      * @return void
      */
-    Publisher<Void> acquire(int permits);
+    Mono<Void> acquire(int permits);
 
     /**
      * Releases a permit, returning it to the semaphore.
@@ -95,7 +96,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * 
      * @return void
      */
-    Publisher<Void> release();
+    Mono<Void> release();
 
     /**
      * Releases the given number of permits, returning them to the semaphore.
@@ -112,7 +113,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @param permits amount
      * @return void
      */
-    Publisher<Void> release(int permits);
+    Mono<Void> release(int permits);
 
     /**
      * Sets number of permits.
@@ -120,7 +121,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @param permits - number of permits
      * @return <code>true</code> if permits has been set successfully, otherwise <code>false</code>.  
      */
-    Publisher<Boolean> trySetPermits(int permits);
+    Mono<Boolean> trySetPermits(int permits);
 
     /**
      * <p>Acquires a permit, if one is available and returns immediately,
@@ -138,7 +139,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return {@code true} if a permit was acquired and {@code false}
      *         if the waiting time elapsed before a permit was acquired
      */
-    Publisher<Boolean> tryAcquire(long waitTime, TimeUnit unit);
+    Mono<Boolean> tryAcquire(long waitTime, TimeUnit unit);
     
     /**
      * Acquires the given number of permits only if all are available
@@ -160,7 +161,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return {@code true} if a permit was acquired and {@code false}
      *         if the waiting time elapsed before a permit was acquired
      */
-    Publisher<Boolean> tryAcquire(int permits, long waitTime, TimeUnit unit);
+    Mono<Boolean> tryAcquire(int permits, long waitTime, TimeUnit unit);
 
     /**
      * Shrinks the number of available permits by the indicated
@@ -173,7 +174,7 @@ public interface RSemaphoreReactive extends RExpirableReactive {
      * @return void
      * @throws IllegalArgumentException if {@code reduction} is negative
      */
-    Publisher<Void> reducePermits(int permits);
+    Mono<Void> reducePermits(int permits);
 
     
 }

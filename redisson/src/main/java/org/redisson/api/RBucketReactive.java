@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@ package org.redisson.api;
 
 import java.util.concurrent.TimeUnit;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 
 /**
- * Object holder. Max size of object is 512MB
+ * Reactive implementation of object holder. Max size of object is 512MB
  *
  * @author Nikita Koksharov
  *
@@ -34,22 +34,78 @@ public interface RBucketReactive<V> extends RExpirableReactive {
      * 
      * @return object size
      */
-    Publisher<Long> size();
+    Mono<Long> size();
     
-    Publisher<Boolean> trySet(V value);
+    /**
+     * Tries to set element atomically into empty holder.
+     * 
+     * @param value - value to set
+     * @return {@code true} if successful, or {@code false} if
+     *         element was already set
+     */
+    Mono<Boolean> trySet(V value);
 
-    Publisher<Boolean> trySet(V value, long timeToLive, TimeUnit timeUnit);
+    /**
+     * Tries to set element atomically into empty holder with defined <code>timeToLive</code> interval.
+     * 
+     * @param value - value to set
+     * @param timeToLive - time to live interval
+     * @param timeUnit - unit of time to live interval
+     * @return {@code true} if successful, or {@code false} if
+     *         element was already set
+     */
+    Mono<Boolean> trySet(V value, long timeToLive, TimeUnit timeUnit);
 
-    Publisher<Boolean> compareAndSet(V expect, V update);
+    /**
+     * Atomically sets the value to the given updated value
+     * only if serialized state of the current value equals 
+     * to serialized state of the expected value.
+     *
+     * @param expect the expected value
+     * @param update the new value
+     * @return {@code true} if successful; or {@code false} if the actual value
+     *         was not equal to the expected value.
+     */
+    Mono<Boolean> compareAndSet(V expect, V update);
 
-    Publisher<V> getAndSet(V newValue);
+    /**
+     * Retrieves current element in the holder and replaces it with <code>newValue</code>. 
+     * 
+     * @param newValue - value to set
+     * @return previous value
+     */
+    Mono<V> getAndSet(V newValue);
 
-    Publisher<V> get();
+    /**
+     * Retrieves element stored in the holder.
+     * 
+     * @return element
+     */
+    Mono<V> get();
     
-    Publisher<V> getAndDelete();
+    /**
+     * Retrieves element in the holder and removes it.
+     * 
+     * @return element
+     */
+    Mono<V> getAndDelete();
 
-    Publisher<Void> set(V value);
+    /**
+     * Stores element into the holder. 
+     * 
+     * @param value - value to set
+     * @return void
+     */
+    Mono<Void> set(V value);
 
-    Publisher<Void> set(V value, long timeToLive, TimeUnit timeUnit);
+    /**
+     * Stores element into the holder with defined <code>timeToLive</code> interval.
+     * 
+     * @param value - value to set
+     * @param timeToLive - time to live interval
+     * @param timeUnit - unit of time to live interval
+     * @return void
+     */
+    Mono<Void> set(V value, long timeToLive, TimeUnit timeUnit);
 
 }

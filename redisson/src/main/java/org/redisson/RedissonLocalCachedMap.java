@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import org.redisson.cache.CacheKey;
 import org.redisson.cache.LFUCacheMap;
 import org.redisson.cache.LRUCacheMap;
 import org.redisson.cache.LocalCacheListener;
+import org.redisson.cache.LocalCacheView;
 import org.redisson.cache.LocalCachedMapClear;
 import org.redisson.cache.LocalCachedMapInvalidate;
 import org.redisson.cache.LocalCachedMapUpdate;
@@ -136,6 +137,7 @@ public class RedissonLocalCachedMap<K, V> extends RedissonMap<K, V> implements R
     private SyncStrategy syncStrategy;
 
     private LocalCacheListener listener;
+    private LocalCacheView<K, V> localCacheView;
     
     public RedissonLocalCachedMap(CommandAsyncExecutor commandExecutor, String name, LocalCachedMapOptions<K, V> options, EvictionScheduler evictionScheduler, RedissonClient redisson) {
         super(commandExecutor, name, redisson, options);
@@ -166,6 +168,7 @@ public class RedissonLocalCachedMap<K, V> extends RedissonMap<K, V> implements R
             
         };
         listener.add();
+        localCacheView = new LocalCacheView(cache, this);
 
         if (options.getSyncStrategy() != SyncStrategy.NONE) {
             invalidateEntryOnChange = 1;
@@ -520,6 +523,11 @@ public class RedissonLocalCachedMap<K, V> extends RedissonMap<K, V> implements R
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.HDEL, params.toArray());
     }
 
+    @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), listener.getUpdatesLogName());
+        return super.sizeInMemoryAsync(keys);
+    }
     
     @Override
     public RFuture<Boolean> deleteAsync() {
@@ -1084,6 +1092,26 @@ public class RedissonLocalCachedMap<K, V> extends RedissonMap<K, V> implements R
         } catch (IOException e) {
             throw new IllegalArgumentException(e);
         }
+    }
+
+    @Override
+    public Set<K> cachedKeySet() {
+        return localCacheView.cachedKeySet();
+    }
+
+    @Override
+    public Collection<V> cachedValues() {
+        return localCacheView.cachedValues();
+    }
+    
+    @Override
+    public Set<Entry<K, V>> cachedEntrySet() {
+        return localCacheView.cachedEntrySet();
+    }
+    
+    @Override
+    public Map<K, V> getCachedMap() {
+        return localCacheView.getCachedMap();
     }
     
 }

@@ -17,6 +17,26 @@ import org.redisson.api.RateType;
 
 public class RedissonRateLimiterTest extends BaseTest {
 
+    @Test(timeout = 1500)
+    public void testTryAcquire() {
+        RRateLimiter rr = redisson.getRateLimiter("acquire");
+        assertThat(rr.trySetRate(RateType.OVERALL, 1, 5, RateIntervalUnit.SECONDS)).isTrue();
+
+        assertThat(rr.tryAcquire(1, 1, TimeUnit.SECONDS)).isTrue();
+        assertThat(rr.tryAcquire(1, 1, TimeUnit.SECONDS)).isFalse();
+        assertThat(rr.tryAcquire()).isFalse();
+    }
+    
+    @Test
+    public void testAcquire() {
+        RRateLimiter rr = redisson.getRateLimiter("acquire");
+        assertThat(rr.trySetRate(RateType.OVERALL, 1, 5, RateIntervalUnit.SECONDS)).isTrue();
+        for (int i = 0; i < 10; i++) {
+            rr.acquire(1);
+        }
+        assertThat(rr.tryAcquire()).isFalse();
+    }
+    
     @Test
     public void test() throws InterruptedException {
         RRateLimiter rr = redisson.getRateLimiter("test");
@@ -30,7 +50,7 @@ public class RedissonRateLimiterTest extends BaseTest {
             for (int i = 0; i < 10; i++) {
                 assertThat(rr.tryAcquire()).isFalse();
             }
-            Thread.sleep(1000);
+            Thread.sleep(1050);
         }
     }
     
@@ -49,10 +69,10 @@ public class RedissonRateLimiterTest extends BaseTest {
                 public void run() {
                     while (true) {
                         if (rr.tryAcquire()) {
-                            queue.add(System.currentTimeMillis());
                             if (counter.incrementAndGet() > 500) {
                                 break;
                             }
+                            queue.add(System.currentTimeMillis());
                         }
                         try {
                             Thread.sleep(ThreadLocalRandom.current().nextInt(10));
@@ -66,7 +86,7 @@ public class RedissonRateLimiterTest extends BaseTest {
         }
         
         pool.shutdown();
-        pool.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+        assertThat(pool.awaitTermination(1, TimeUnit.MINUTES)).isTrue();
         
         int count = 0;
         long start = 0;

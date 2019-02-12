@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,13 +31,14 @@ import java.util.concurrent.locks.ReadWriteLock;
  * @author Nikita Koksharov
  *
  */
-public interface RReadWriteLock extends ReadWriteLock, RExpirable {
+public interface RReadWriteLock extends ReadWriteLock {
 
     /**
      * Returns the lock used for reading.
      *
      * @return the lock used for reading
      */
+    @Override
     RLock readLock();
 
     /**
@@ -45,6 +46,7 @@ public interface RReadWriteLock extends ReadWriteLock, RExpirable {
      *
      * @return the lock used for writing
      */
+    @Override
     RLock writeLock();
 
 }

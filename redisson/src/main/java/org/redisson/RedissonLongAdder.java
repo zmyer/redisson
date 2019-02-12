@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@
  */
 package org.redisson;
 
+import java.util.concurrent.atomic.LongAdder;
+
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RFuture;
 import org.redisson.api.RLongAdder;
 import org.redisson.api.RedissonClient;
 import org.redisson.command.CommandAsyncExecutor;
-import org.redisson.misc.LongAdder;
 
 /**
  * 

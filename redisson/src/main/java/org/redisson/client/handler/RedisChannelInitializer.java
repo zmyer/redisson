@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.redisson.client.handler;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -97,9 +98,9 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
         }
         
         if (type == Type.PLAIN) {
-            ch.pipeline().addLast(new CommandDecoder());
+            ch.pipeline().addLast(new CommandDecoder(config.getExecutor(), config.isDecodeInExecutor()));
         } else {
-            ch.pipeline().addLast(new CommandPubSubDecoder(config.getExecutor(), config.isKeepPubSubOrder()));
+            ch.pipeline().addLast(new CommandPubSubDecoder(config.getExecutor(), config.isKeepPubSubOrder(), config.isDecodeInExecutor()));
         }
     }
     
@@ -155,7 +156,13 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
         
         SSLParameters sslParams = new SSLParameters();
         if (config.isSslEnableEndpointIdentification()) {
-            sslParams.setEndpointIdentificationAlgorithm("HTTPS");
+            // TODO remove for JDK 1.7+
+            try {
+                Method method = sslParams.getClass().getDeclaredMethod("setEndpointIdentificationAlgorithm", String.class);
+                method.invoke(sslParams, "HTTPS");
+            } catch (Exception e) {
+                throw new SSLException(e);
+            }
         } else {
             if (config.getSslTruststore() == null) {
                 sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);

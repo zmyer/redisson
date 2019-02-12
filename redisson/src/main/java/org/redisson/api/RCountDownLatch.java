@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.redisson.api;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Distributed alternative to the {@link java.util.concurrent.CountDownLatch}
+ * Distributed implementation of {@link java.util.concurrent.CountDownLatch}
  *
  * It has an advantage over {@link java.util.concurrent.CountDownLatch} --
  * count can be set via {@link #trySetCount} method.

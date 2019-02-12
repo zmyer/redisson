@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.redisson;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 
@@ -24,7 +25,7 @@ import org.redisson.api.RLock;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.RedisStrictCommand;
-import org.redisson.command.CommandExecutor;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.pubsub.LockPubSub;
 
 /**
@@ -40,11 +41,11 @@ import org.redisson.pubsub.LockPubSub;
 public class RedissonFairLock extends RedissonLock implements RLock {
 
     private final long threadWaitTime = 5000;
-    private final CommandExecutor commandExecutor;
+    private final CommandAsyncExecutor commandExecutor;
     private final String threadsQueueName;
     private final String timeoutSetName;
 
-    protected RedissonFairLock(CommandExecutor commandExecutor, String name) {
+    public RedissonFairLock(CommandAsyncExecutor commandExecutor, String name) {
         super(commandExecutor, name);
         this.commandExecutor = commandExecutor;
         threadsQueueName = prefixName("redisson_lock_queue", name);
@@ -231,6 +232,12 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     }
     
     @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), threadsQueueName, timeoutSetName);
+        return super.sizeInMemoryAsync(keys);
+    }
+    
+    @Override
     public RFuture<Boolean> expireAsync(long timeToLive, TimeUnit timeUnit) {
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                         "redis.call('pexpire', KEYS[1], ARGV[1]); " +
@@ -262,7 +269,7 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     
     @Override
     public RFuture<Boolean> forceUnlockAsync() {
-        cancelExpirationRenewal();
+        cancelExpirationRenewal(null);
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                 // remove stale threads
                 "while true do "

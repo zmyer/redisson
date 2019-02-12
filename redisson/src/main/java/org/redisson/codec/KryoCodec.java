@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,8 @@ public class KryoCodec extends BaseCodec {
         void yield(Kryo kryo);
         
         ClassLoader getClassLoader();
+        
+        List<Class<?>> getClasses();
 
     }
 
@@ -92,6 +94,10 @@ public class KryoCodec extends BaseCodec {
             return kryo;
         }
 
+        public List<Class<?>> getClasses() {
+            return classes;
+        }
+        
         @Override
         public ClassLoader getClassLoader() {
             return classLoader;
@@ -164,6 +170,10 @@ public class KryoCodec extends BaseCodec {
 
     public KryoCodec(ClassLoader classLoader) {
         this(Collections.<Class<?>>emptyList(), classLoader);
+    }
+    
+    public KryoCodec(ClassLoader classLoader, KryoCodec codec) {
+        this(codec.kryoPool.getClasses(), classLoader);
     }
     
     public KryoCodec(List<Class<?>> classes) {

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,99 @@
  */
 package org.redisson.api;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
- * 
+ * Reactive interface for AtomicLong object
+ *
  * @author Nikita Koksharov
  *
  */
 public interface RAtomicLongReactive extends RExpirableReactive {
 
-    Publisher<Boolean> compareAndSet(long expect, long update);
+    /**
+     * Atomically sets the value to the given updated value
+     * only if the current value {@code ==} the expected value.
+     *
+     * @param expect the expected value
+     * @param update the new value
+     * @return true if successful; or false if the actual value
+     *         was not equal to the expected value.
+     */
+    Mono<Boolean> compareAndSet(long expect, long update);
 
-    Publisher<Long> addAndGet(long delta);
+    /**
+     * Atomically adds the given value to the current value.
+     *
+     * @param delta the value to add
+     * @return the updated value
+     */
+    Mono<Long> addAndGet(long delta);
 
-    Publisher<Long> decrementAndGet();
+    /**
+     * Atomically decrements the current value by one.
+     *
+     * @return the updated value
+     */
+    Mono<Long> decrementAndGet();
 
-    Publisher<Long> get();
+    /**
+     * Returns current value.
+     *
+     * @return the current value
+     */
+    Mono<Long> get();
 
-    Publisher<Long> getAndAdd(long delta);
+    /**
+     * Returns and deletes object
+     * 
+     * @return the current value
+     */
+    Mono<Long> getAndDelete();
+    
+    /**
+     * Atomically adds the given value to the current value.
+     *
+     * @param delta the value to add
+     * @return the old value before the add
+     */
+    Mono<Long> getAndAdd(long delta);
 
-    Publisher<Long> getAndSet(long newValue);
+    /**
+     * Atomically sets the given value and returns the old value.
+     *
+     * @param newValue the new value
+     * @return the old value
+     */
+    Mono<Long> getAndSet(long newValue);
 
-    Publisher<Long> incrementAndGet();
+    /**
+     * Atomically increments the current value by one.
+     *
+     * @return the updated value
+     */
+    Mono<Long> incrementAndGet();
 
-    Publisher<Long> getAndIncrement();
+    /**
+     * Atomically increments the current value by one.
+     *
+     * @return the old value
+     */
+    Mono<Long> getAndIncrement();
 
-    Publisher<Long> getAndDecrement();
+    /**
+     * Atomically decrements by one the current value.
+     *
+     * @return the previous value
+     */
+    Mono<Long> getAndDecrement();
 
-    Publisher<Void> set(long newValue);
+    /**
+     * Atomically sets the given value.
+     *
+     * @param newValue the new value
+     * @return void
+     */
+    Mono<Void> set(long newValue);
 
 }

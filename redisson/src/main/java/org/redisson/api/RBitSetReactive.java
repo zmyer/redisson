@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,17 @@ package org.redisson.api;
 
 import java.util.BitSet;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
- * Vector of bits that grows as needed.
+ * Reactive interface for BitSet object
  *
  * @author Nikita Koksharov
  *
  */
 public interface RBitSetReactive extends RExpirableReactive {
 
-    Publisher<BitSet> asBitSet();
-
-    Publisher<byte[]> toByteArray();
+    Mono<byte[]> toByteArray();
 
     /**
      * Returns "logical size" = index of highest set bit plus one.
@@ -37,7 +35,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * 
      * @return "logical size" = index of highest set bit plus one
      */
-    Publisher<Long> length();
+    Mono<Long> length();
 
     /**
      * Set all bits to <code>value</code> from <code>fromIndex</code> (inclusive) to <code>toIndex</code> (exclusive)
@@ -48,7 +46,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return void
      * 
      */
-    Publisher<Void> set(long fromIndex, long toIndex, boolean value);
+    Mono<Void> set(long fromIndex, long toIndex, boolean value);
 
     /**
      * Set all bits to zero from <code>fromIndex</code> (inclusive) to <code>toIndex</code> (exclusive)
@@ -58,7 +56,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return void
      * 
      */
-    Publisher<Void> clear(long fromIndex, long toIndex);
+    Mono<Void> clear(long fromIndex, long toIndex);
 
     /**
      * Copy bits state of source BitSet object to this object
@@ -66,14 +64,14 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param bs - BitSet source
      * @return void
      */
-    Publisher<Void> set(BitSet bs);
+    Mono<Void> set(BitSet bs);
 
     /**
      * Executes NOT operation over all bits
      * 
      * @return void
      */
-    Publisher<Void> not();
+    Mono<Void> not();
 
     /**
      * Set all bits to one from <code>fromIndex</code> (inclusive) to <code>toIndex</code> (exclusive)
@@ -82,14 +80,14 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param toIndex exclusive
      * @return void
      */
-    Publisher<Void> set(long fromIndex, long toIndex);
+    Mono<Void> set(long fromIndex, long toIndex);
 
     /**
      * Returns number of set bits.
      * 
      * @return number of set bits.
      */
-    Publisher<Long> size();
+    Mono<Long> size();
 
     /**
      * Returns <code>true</code> if bit set to one and <code>false</code> overwise.
@@ -97,7 +95,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param bitIndex - index of bit
      * @return <code>true</code> if bit set to one and <code>false</code> overwise.
      */
-    Publisher<Boolean> get(long bitIndex);
+    Mono<Boolean> get(long bitIndex);
 
     /**
      * Set bit to one at specified bitIndex
@@ -106,7 +104,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return <code>true</code> - if previous value was true, 
      * <code>false</code> - if previous value was false
      */
-    Publisher<Boolean> set(long bitIndex);
+    Mono<Boolean> set(long bitIndex);
 
     /**
      * Set bit to <code>value</code> at specified <code>bitIndex</code>
@@ -116,14 +114,14 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return <code>true</code> - if previous value was true, 
      * <code>false</code> - if previous value was false
      */
-    Publisher<Boolean> set(long bitIndex, boolean value);
+    Mono<Boolean> set(long bitIndex, boolean value);
 
     /**
      * Returns the number of bits set to one.
      * 
      * @return number of bits
      */
-    Publisher<Long> cardinality();
+    Mono<Long> cardinality();
 
     /**
      * Set bit to zero at specified <code>bitIndex</code>
@@ -132,14 +130,14 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return <code>true</code> - if previous value was true, 
      * <code>false</code> - if previous value was false
      */
-    Publisher<Boolean> clear(long bitIndex);
+    Mono<Boolean> clear(long bitIndex);
 
     /**
      * Set all bits to zero
      * 
      * @return void
      */
-    Publisher<Void> clear();
+    Mono<Void> clear();
 
     /**
      * Executes OR operation over this object and specified bitsets.
@@ -148,7 +146,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param bitSetNames - name of stored bitsets
      * @return void
      */
-    Publisher<Void> or(String... bitSetNames);
+    Mono<Void> or(String... bitSetNames);
 
     /**
      * Executes AND operation over this object and specified bitsets.
@@ -157,7 +155,7 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param bitSetNames - name of stored bitsets
      * @return void
      */
-    Publisher<Void> and(String... bitSetNames);
+    Mono<Void> and(String... bitSetNames);
 
     /**
      * Executes XOR operation over this object and specified bitsets.
@@ -166,6 +164,6 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @param bitSetNames - name of stored bitsets
      * @return void
      */
-    Publisher<Void> xor(String... bitSetNames);
+    Mono<Void> xor(String... bitSetNames);
 
 }

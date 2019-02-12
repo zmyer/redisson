@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.redisson.connection.pool;
 
 import java.net.InetSocketAddress;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -29,7 +30,6 @@ import org.redisson.client.RedisConnectionException;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.config.MasterSlaveServersConfig;
-import org.redisson.config.ReadMode;
 import org.redisson.connection.ClientConnectionsEntry;
 import org.redisson.connection.ClientConnectionsEntry.FreezeReason;
 import org.redisson.connection.ConnectionManager;
@@ -74,13 +74,21 @@ abstract class ConnectionPool<T extends RedisConnection> {
         promise.addListener(new FutureListener<Void>() {
             @Override
             public void operationComplete(Future<Void> future) throws Exception {
-                entries.add(entry);
+                if (future.isSuccess()) {
+                    entries.add(entry);
+                }
             }
         });
         initConnections(entry, promise, true);
         return promise;
     }
 
+    public RPromise<Void> initConnections(ClientConnectionsEntry entry) {
+        RPromise<Void> promise = new RedissonPromise<Void>();
+        initConnections(entry, promise, false);
+        return promise;
+    }
+    
     private void initConnections(final ClientConnectionsEntry entry, final RPromise<Void> initPromise, boolean checkFreezed) {
         final int minimumIdleSize = getMinimumIdleSize(entry);
 
@@ -120,13 +128,34 @@ abstract class ConnectionPool<T extends RedisConnection> {
                     public void operationComplete(Future<T> future) throws Exception {
                         if (future.isSuccess()) {
                             T conn = future.getNow();
-
-                            releaseConnection(entry, conn);
+                            if (!initPromise.isDone()) {
+                                releaseConnection(entry, conn);
+                            } else {
+                                conn.closeAsync();
+                            }
                         }
 
                         releaseConnection(entry);
 
                         if (!future.isSuccess()) {
+                            if (initPromise.isDone()) {
+                                return;
+                            }
+                            
+                            for (RedisConnection connection : entry.getAllConnections()) {
+                                if (!connection.isClosed()) {
+                                    connection.closeAsync();
+                                }
+                            }
+                            entry.getAllConnections().clear();
+                            
+                            for (RedisConnection connection : entry.getAllSubscribeConnections()) {
+                                if (!connection.isClosed()) {
+                                    connection.closeAsync();
+                                }
+                            }
+                            entry.getAllSubscribeConnections().clear();
+                            
                             int totalInitializedConnections = minimumIdleSize - initializedConnections.get();
                             String errorMsg;
                             if (totalInitializedConnections == 0) {
@@ -142,9 +171,8 @@ abstract class ConnectionPool<T extends RedisConnection> {
 
                         int value = initializedConnections.decrementAndGet();
                         if (value == 0) {
-                            log.info("{} connections initialized for {}", minimumIdleSize, entry.getClient().getAddr());
-                            if (!initPromise.trySuccess(null)) {
-                                throw new IllegalStateException();
+                            if (initPromise.trySuccess(null)) {
+                                log.info("{} connections initialized for {}", minimumIdleSize, entry.getClient().getAddr());
                             }
                         } else if (value > 0 && !initPromise.isDone()) {
                             if (requests.incrementAndGet() <= minimumIdleSize) {
@@ -166,14 +194,16 @@ abstract class ConnectionPool<T extends RedisConnection> {
 
     public RFuture<T> get(RedisCommand<?> command) {
         List<ClientConnectionsEntry> entriesCopy = new LinkedList<ClientConnectionsEntry>(entries);
+        for (Iterator<ClientConnectionsEntry> iterator = entriesCopy.iterator(); iterator.hasNext();) {
+            ClientConnectionsEntry entry = iterator.next();
+            if (!((!entry.isFreezed() || entry.isMasterForRead()) && 
+                    tryAcquireConnection(entry))) {
+                iterator.remove();
+            }
+        }
         while (!entriesCopy.isEmpty()) {
             ClientConnectionsEntry entry = config.getLoadBalancer().getEntry(entriesCopy);
-            if ((!entry.isFreezed() || 
-                    (entry.getFreezeReason() == FreezeReason.SYSTEM && config.getReadMode() == ReadMode.MASTER_SLAVE)) && 
-        		    tryAcquireConnection(entry)) {
-                return acquireConnection(command, entry);
-            }
-            entriesCopy.remove(entry);
+            return acquireConnection(command, entry);
         }
         
         List<InetSocketAddress> failed = new LinkedList<InetSocketAddress>();
@@ -199,8 +229,8 @@ abstract class ConnectionPool<T extends RedisConnection> {
     }
 
     public RFuture<T> get(RedisCommand<?> command, ClientConnectionsEntry entry) {
-        return acquireConnection(command, entry);
-    }
+            return acquireConnection(command, entry);
+        }
 
     public static abstract class AcquireCallback<T> implements Runnable, FutureListener<T> {
         
@@ -209,28 +239,29 @@ abstract class ConnectionPool<T extends RedisConnection> {
     protected final RFuture<T> acquireConnection(RedisCommand<?> command, final ClientConnectionsEntry entry) {
         final RPromise<T> result = new RedissonPromise<T>();
 
-        AcquireCallback<T> callback = new AcquireCallback<T>() {
-            @Override
-            public void run() {
-                result.removeListener(this);
-                connectTo(entry, result);
-            }
+            AcquireCallback<T> callback = new AcquireCallback<T>() {
+                    @Override
+                    public void run() {
+                        result.removeListener(this);
+                        connectTo(entry, result);
+                    }
+                
+                @Override
+                public void operationComplete(Future<T> future) throws Exception {
+                    entry.removeConnection(this);
+                }
+            };
             
-            @Override
-            public void operationComplete(Future<T> future) throws Exception {
-                entry.removeConnection(this);
-            }
-        };
+            result.addListener(callback);
+            acquireConnection(entry, callback);
         
-        result.addListener(callback);
-        acquireConnection(entry, callback);
+            return result;
+        }
         
-        return result;
-    }
-
     protected boolean tryAcquireConnection(ClientConnectionsEntry entry) {
-        if (entry.getNodeType() == NodeType.SLAVE) {
-            return !entry.isFailed();
+        if (entry.getNodeType() == NodeType.SLAVE && entry.isFailed()) {
+            checkForReconnect(entry, null);
+            return false;
         }
         return true;
     }
@@ -250,6 +281,10 @@ abstract class ConnectionPool<T extends RedisConnection> {
         }
         T conn = poll(entry);
         if (conn != null) {
+            if (!conn.isActive() && entry.getNodeType() == NodeType.SLAVE) {
+                entry.trySetupFistFail();
+            }
+
             connectedSuccessful(entry, promise, conn);
             return;
         }
@@ -279,9 +314,10 @@ abstract class ConnectionPool<T extends RedisConnection> {
     }
 
     private void connectedSuccessful(ClientConnectionsEntry entry, RPromise<T> promise, T conn) {
-        if (entry.getNodeType() == NodeType.SLAVE) {
+        if (conn.isActive() && entry.getNodeType() == NodeType.SLAVE) {
             entry.resetFirstFail();
         }
+
         if (!promise.trySuccess(conn)) {
             releaseConnection(entry, conn);
             releaseConnection(entry);
@@ -292,8 +328,8 @@ abstract class ConnectionPool<T extends RedisConnection> {
         if (entry.getNodeType() == NodeType.SLAVE) {
             entry.trySetupFistFail();
             if (entry.isFailed()) {
-                checkForReconnect(entry, cause);
-            }
+            checkForReconnect(entry, cause);
+        }
         }
 
         releaseConnection(entry);
@@ -305,11 +341,12 @@ abstract class ConnectionPool<T extends RedisConnection> {
         if (entry.getNodeType() == NodeType.SLAVE) {
             entry.trySetupFistFail();
             if (entry.isFailed()) {
-                conn.closeAsync();
-                checkForReconnect(entry, null);
+            conn.closeAsync();
+            entry.getAllConnections().remove(conn);
+            checkForReconnect(entry, null);
             } else {
-                releaseConnection(entry, conn);
-            }
+            releaseConnection(entry, conn);
+        }
         } else {
             releaseConnection(entry, conn);
         }
@@ -323,10 +360,10 @@ abstract class ConnectionPool<T extends RedisConnection> {
     private void checkForReconnect(ClientConnectionsEntry entry, Throwable cause) {
         if (masterSlaveEntry.slaveDown(entry, FreezeReason.RECONNECT)) {
             log.error("slave " + entry.getClient().getAddr() + " has been disconnected after " 
-                        + config.getFailedSlaveCheckInterval() + " time interval since moment of first failed connection", cause);
+                        + config.getFailedSlaveCheckInterval() + " ms interval since moment of the first failed connection", cause);
             scheduleCheck(entry);
+            }
         }
-    }
 
     private void scheduleCheck(final ClientConnectionsEntry entry) {
 
@@ -377,16 +414,9 @@ abstract class ConnectionPool<T extends RedisConnection> {
                                     }
 
                                     if (future.isSuccess() && "PONG".equals(future.getNow())) {
-                                        entry.resetFirstFail();
-                                        RPromise<Void> promise = new RedissonPromise<Void>();
-                                        promise.addListener(new FutureListener<Void>() {
-                                            @Override
-                                            public void operationComplete(Future<Void> future) throws Exception {
-                                                masterSlaveEntry.slaveUp(entry, FreezeReason.RECONNECT);
-                                                log.info("slave {} has been successfully reconnected", entry.getClient().getAddr());
-                                            }
-                                        });
-                                        initConnections(entry, promise, false);
+                                        if (masterSlaveEntry.slaveUp(entry, FreezeReason.RECONNECT)) {
+                                            log.info("slave {} has been successfully reconnected", entry.getClient().getAddr());
+                                        }
                                     } else {
                                         scheduleCheck(entry);
                                     }
@@ -421,8 +451,9 @@ abstract class ConnectionPool<T extends RedisConnection> {
     }
 
     public void returnConnection(ClientConnectionsEntry entry, T connection) {
-        if (entry.isFreezed()) {
+        if (entry.isFreezed() && entry.getFreezeReason() != FreezeReason.SYSTEM) {
             connection.closeAsync();
+            entry.getAllConnections().remove(connection);
         } else {
             releaseConnection(entry, connection);
         }

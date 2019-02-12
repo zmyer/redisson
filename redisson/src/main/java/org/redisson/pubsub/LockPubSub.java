@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.redisson.misc.RPromise;
 public class LockPubSub extends PublishSubscribe<RedissonLockEntry> {
 
     public static final Long unlockMessage = 0L;
+    public static final Long readUnlockMessage = 1L;
 
     @Override
     protected RedissonLockEntry createEntry(RPromise<RedissonLockEntry> newPromise) {
@@ -41,6 +42,16 @@ public class LockPubSub extends PublishSubscribe<RedissonLockEntry> {
             }
 
             value.getLatch().release();
+        } else if (message.equals(readUnlockMessage)) {
+            while (true) {
+                Runnable runnableToExecute = value.getListeners().poll();
+                if (runnableToExecute == null) {
+                    break;
+                }
+                runnableToExecute.run();
+            }
+
+            value.getLatch().release(value.getLatch().getQueueLength());
         }
     }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,40 @@ import org.redisson.config.Config;
 /**
  * Main Redisson interface for access
  * to all redisson objects with sync/async interface.
+ * 
+ * @see RedissonReactiveClient
  *
  * @author Nikita Koksharov
  *
  */
 public interface RedissonClient {
 
+    /**
+     * Returns stream instance by <code>name</code>
+     * <p>
+     * Requires <b>Redis 5.0.0 and higher.</b>
+     * 
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name of stream
+     * @return RStream object
+     */
+    <K, V> RStream<K, V> getStream(String name);
+    
+    /**
+     * Returns stream instance by <code>name</code>
+     * using provided <code>codec</code> for entries.
+     * <p>
+     * Requires <b>Redis 5.0.0 and higher.</b>
+     * 
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name - name of stream
+     * @param codec - codec for entry
+     * @return RStream object
+     */
+    <K, V> RStream<K, V> getStream(String name, Codec codec);
+    
     /**
      * Returns rate limiter instance by <code>name</code>
      * 
@@ -517,22 +545,20 @@ public interface RedissonClient {
     /**
      * Returns topic instance by name.
      * 
-     * @param <M> type of message
      * @param name - name of object
      * @return Topic object
      */
-    <M> RTopic<M> getTopic(String name);
+    RTopic getTopic(String name);
 
     /**
      * Returns topic instance by name
      * using provided codec for messages.
      *
-     * @param <M> type of message
      * @param name - name of object
      * @param codec - codec for message
      * @return Topic object
      */
-    <M> RTopic<M> getTopic(String name, Codec codec);
+    RTopic getTopic(String name, Codec codec);
 
     /**
      * Returns topic instance satisfies by pattern name.
@@ -542,11 +568,10 @@ public interface RedissonClient {
      *    h*llo subscribes to hllo and heeeello
      *    h[ae]llo subscribes to hello and hallo, but not hillo
      * 
-     * @param <M> type of message
      * @param pattern of the topic
      * @return PatterTopic object
      */
-    <M> RPatternTopic<M> getPatternTopic(String pattern);
+    RPatternTopic getPatternTopic(String pattern);
 
     /**
      * Returns topic instance satisfies by pattern name
@@ -557,12 +582,11 @@ public interface RedissonClient {
      *    h*llo subscribes to hllo and heeeello
      *    h[ae]llo subscribes to hello and hallo, but not hillo
      * 
-     * @param <M> type of message
      * @param pattern of the topic
      * @param codec - codec for message
      * @return PatterTopic object
      */
-    <M> RPatternTopic<M> getPatternTopic(String pattern, Codec codec);
+    RPatternTopic getPatternTopic(String pattern, Codec codec);
 
     /**
      * Returns unbounded queue instance by name.
@@ -838,6 +862,14 @@ public interface RedissonClient {
      * @return Script object
      */
     RScript getScript();
+    
+    /**
+     * Returns script operations object using provided codec.
+     * 
+     * @param codec - codec for params and result
+     * @return Script object
+     */
+    RScript getScript(Codec codec);
 
     /**
      * Returns ScheduledExecutorService by name
@@ -946,11 +978,14 @@ public interface RedissonClient {
      */
     RBatch createBatch(BatchOptions options);
 
-    /*
-     * Use #createBatch(BatchOptions)
-     * 
+    /**
+     * Creates batch object which could be executed later 
+     * with collected group of commands in pipeline mode.
+     * <p>
+     * See <a href="http://redis.io/topics/pipelining">http://redis.io/topics/pipelining</a>
+     *
+     * @return Batch object
      */
-    @Deprecated
     RBatch createBatch();
     
     /**

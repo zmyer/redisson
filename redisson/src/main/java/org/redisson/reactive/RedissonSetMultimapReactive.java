@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,12 @@
  */
 package org.redisson.reactive;
 
-import java.util.Set;
-import java.util.UUID;
-
-import org.reactivestreams.Publisher;
-import org.redisson.RedissonSetMultimap;
-import org.redisson.api.RFuture;
+import org.redisson.RedissonListMultimap;
 import org.redisson.api.RSet;
 import org.redisson.api.RSetMultimap;
-import org.redisson.api.RSetMultimapReactive;
 import org.redisson.api.RSetReactive;
+import org.redisson.api.RedissonReactiveClient;
 import org.redisson.client.codec.Codec;
-import org.redisson.command.CommandReactiveExecutor;
-
-import reactor.fn.Supplier;
 
 /**
  * 
@@ -37,50 +29,28 @@ import reactor.fn.Supplier;
  * @param <K> key type
  * @param <V> value type
  */
-public class RedissonSetMultimapReactive<K, V> extends RedissonBaseMultimapReactive<K, V> implements RSetMultimapReactive<K, V> {
+public class RedissonSetMultimapReactive<K, V> {
 
-    public RedissonSetMultimapReactive(UUID id, CommandReactiveExecutor commandExecutor, String name) {
-        super(new RedissonSetMultimap<K, V>(commandExecutor, name), commandExecutor, name);
+    private final RedissonReactiveClient redisson;
+    private final CommandReactiveExecutor commandExecutor;
+    private final RedissonListMultimap<K, V> instance;
+    
+    public RedissonSetMultimapReactive(CommandReactiveExecutor commandExecutor, String name, RedissonReactiveClient redisson) {
+        this.instance = new RedissonListMultimap<K, V>(commandExecutor, name);
+        this.redisson = redisson;
+        this.commandExecutor = commandExecutor;
     }
 
-    public RedissonSetMultimapReactive(UUID id, Codec codec, CommandReactiveExecutor commandExecutor, String name) {
-        super(new RedissonSetMultimap<K, V>(codec, commandExecutor, name), codec, commandExecutor, name);
+    public RedissonSetMultimapReactive(Codec codec, CommandReactiveExecutor commandExecutor, String name, RedissonReactiveClient redisson) {
+        this.instance = new RedissonListMultimap<K, V>(codec, commandExecutor, name);
+        this.redisson = redisson;
+        this.commandExecutor = commandExecutor;
     }
 
-    @Override
     public RSetReactive<V> get(K key) {
         RSet<V> set = ((RSetMultimap<K, V>)instance).get(key);
-        return new RedissonSetReactive<V>(codec, commandExecutor, set.getName(), set);
+        return ReactiveProxyBuilder.create(commandExecutor, set, 
+                new RedissonSetReactive<V>(set, redisson), RSetReactive.class);
     }
 
-    @Override
-    public Publisher<Set<V>> getAll(final K key) {
-        return reactive(new Supplier<RFuture<Set<V>>>() {
-            @Override
-            public RFuture<Set<V>> get() {
-                return (RFuture<Set<V>>)(Object)((RSetMultimap<K, V>)instance).getAllAsync(key);
             }
-        });
-    }
-
-    @Override
-    public Publisher<Set<V>> removeAll(final Object key) {
-        return reactive(new Supplier<RFuture<Set<V>>>() {
-            @Override
-            public RFuture<Set<V>> get() {
-                return (RFuture<Set<V>>)(Object)((RSetMultimap<K, V>)instance).removeAllAsync(key);
-            }
-        });
-    }
-
-    @Override
-    public Publisher<Set<V>> replaceValues(final K key, final Iterable<? extends V> values) {
-        return reactive(new Supplier<RFuture<Set<V>>>() {
-            @Override
-            public RFuture<Set<V>> get() {
-                return (RFuture<Set<V>>)(Object)((RSetMultimap<K, V>)instance).replaceValuesAsync(key, values);
-            }
-        });
-    }
-
-}

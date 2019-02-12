@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,13 @@
 package org.redisson.misc;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.redisson.api.RFuture;
 
@@ -26,6 +30,7 @@ import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.PlatformDependent;
 
 /**
  * 
@@ -33,8 +38,14 @@ import io.netty.util.concurrent.Promise;
  *
  * @param <T> type of object
  */
-public class RedissonPromise<T> implements RPromise<T> {
+public class RedissonPromise<T> extends CompletableFuture<T> implements RPromise<T> {
 
+    private volatile boolean uncancellable;
+    
+    private final int SUCCESS = 1;
+    private final int FAILED = 2;
+    private final int CANCELED = 3;    
+    
     private static final Field listenersField;
     
     static {
@@ -47,6 +58,7 @@ public class RedissonPromise<T> implements RPromise<T> {
     }
 
     private final Promise<T> promise = ImmediateEventExecutor.INSTANCE.newPromise();
+    private final AtomicInteger status = new AtomicInteger();
     
     public RedissonPromise() {
     }
@@ -62,30 +74,50 @@ public class RedissonPromise<T> implements RPromise<T> {
         future.trySuccess(result);
         return future;
     }
-
+    
     @Override
     public boolean isSuccess() {
-        return promise.isSuccess();
+        return isDone() && !isCompletedExceptionally();
     }
 
     @Override
-    public boolean trySuccess(T result) {
-        return promise.trySuccess(result);
+    public synchronized boolean trySuccess(T result) {
+        if (status.compareAndSet(0, SUCCESS)) {
+            complete(result);
+            promise.trySuccess(result);
+            return true;
+        }
+        return false;
     }
 
     @Override
     public Throwable cause() {
-        return promise.cause();
+        try {
+            getNow(null);
+        } catch (CancellationException e) {
+            return e;
+        } catch (CompletionException e) {
+            return e.getCause();
+        }
+        return null;
     }
 
     @Override
-    public boolean tryFailure(Throwable cause) {
-        return promise.tryFailure(cause);
+    public synchronized boolean tryFailure(Throwable cause) {
+        if (status.compareAndSet(0, FAILED)) {
+            completeExceptionally(cause);
+            promise.tryFailure(cause);
+            return true;
+        }
+        return false;
     }
 
     @Override
     public boolean setUncancellable() {
-        return promise.setUncancellable();
+        if (!isDone()) {
+            uncancellable = true;
+        }
+        return uncancellable;
     }
 
     @Override
@@ -114,85 +146,115 @@ public class RedissonPromise<T> implements RPromise<T> {
 
     @Override
     public RPromise<T> await() throws InterruptedException {
-        promise.await();
+        try {
+            get();
+        } catch (ExecutionException | CancellationException e) {
+            // skip
+        }
         return this;
     }
 
     @Override
     public RPromise<T> awaitUninterruptibly() {
-        promise.awaitUninterruptibly();
+        try {
+            return await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         return this;
     }
 
     @Override
     public RPromise<T> sync() throws InterruptedException {
-        promise.sync();
+        try {
+            get();
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof CancellationException) {
+                throw (CancellationException)e.getCause();
+            }
+            PlatformDependent.throwException(e.getCause());
+        }
         return this;
     }
 
     @Override
     public RPromise<T> syncUninterruptibly() {
-        promise.syncUninterruptibly();
+        try {
+            join();
+        } catch (CompletionException e) {
+            PlatformDependent.throwException(e.getCause());
+        }
         return this;
     }
 
     @Override
     public boolean await(long timeout, TimeUnit unit) throws InterruptedException {
-        return promise.await(timeout, unit);
-    }
-
-    @Override
-    public boolean isCancelled() {
-        return promise.isCancelled();
-    }
-
-    @Override
-    public boolean isDone() {
-        return promise.isDone();
+        try {
+            get(timeout, unit);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof CancellationException) {
+                throw (CancellationException)e.getCause();
+            }
+            throw new CompletionException(e.getCause());
+        } catch (TimeoutException e) {
+            return false;
+        }
+        return isDone();
     }
 
     @Override
     public boolean await(long timeoutMillis) throws InterruptedException {
-        return promise.await(timeoutMillis);
-    }
-
-    @Override
-    public T get() throws InterruptedException, ExecutionException {
-        return promise.get();
+        return await(timeoutMillis, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public boolean awaitUninterruptibly(long timeout, TimeUnit unit) {
-        return promise.awaitUninterruptibly(timeout, unit);
-    }
-
-    @Override
-    public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        return promise.get(timeout, unit);
+        try {
+            return await(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     @Override
     public boolean awaitUninterruptibly(long timeoutMillis) {
-        return promise.awaitUninterruptibly(timeoutMillis);
+        return awaitUninterruptibly(timeoutMillis, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public T getNow() {
-        return promise.getNow();
+        try {
+            return getNow(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
-        return promise.cancel(mayInterruptIfRunning);
+    public synchronized boolean cancel(boolean mayInterruptIfRunning) {
+        if (uncancellable) {
+            return false;
+        }
+        if (status.compareAndSet(0, CANCELED)) {
+            promise.cancel(mayInterruptIfRunning);
+            return super.cancel(mayInterruptIfRunning);
+        }
+        return false;
     }
-
+    
     @Override
     public boolean hasListeners() {
         try {
-            return listenersField.get(promise) != null;
+            return listenersField.get(promise) != null || getNumberOfDependents() > 0;
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
     }
-    
+
+    @Override
+    public String toString() {
+        return "RedissonPromise [promise=" + promise + "]";
+    }
+
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,7 +82,7 @@ public abstract class QueueTransferTask {
     private int statusListenerId;
     
     public void start() {
-        RTopic<Long> schedulerTopic = getTopic();
+        RTopic schedulerTopic = getTopic();
         statusListenerId = schedulerTopic.addListener(new BaseStatusListener() {
             @Override
             public void onSubscribe(String channel) {
@@ -90,23 +90,23 @@ public abstract class QueueTransferTask {
             }
         });
         
-        messageListenerId = schedulerTopic.addListener(new MessageListener<Long>() {
+        messageListenerId = schedulerTopic.addListener(Long.class, new MessageListener<Long>() {
             @Override
-            public void onMessage(String channel, Long startTime) {
+            public void onMessage(CharSequence channel, Long startTime) {
                 scheduleTask(startTime);
             }
         });
     }
     
     public void stop() {
-        RTopic<Long> schedulerTopic = getTopic();
+        RTopic schedulerTopic = getTopic();
         schedulerTopic.removeListener(messageListenerId);
         schedulerTopic.removeListener(statusListenerId);
     }
 
     private void scheduleTask(final Long startTime) {
         TimeoutTask oldTimeout = lastTimeout.get();
-        if (startTime == null || (oldTimeout != null && oldTimeout.getStartTime() < startTime)) {
+        if (startTime == null) {
             return;
         }
         
@@ -135,7 +135,7 @@ public abstract class QueueTransferTask {
         }
     }
     
-    protected abstract RTopic<Long> getTopic();
+    protected abstract RTopic getTopic();
     
     protected abstract RFuture<Long> pushTaskAsync();
     

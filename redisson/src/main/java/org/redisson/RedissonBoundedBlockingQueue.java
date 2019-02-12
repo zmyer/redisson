@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.redisson;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -152,6 +151,10 @@ public class RedissonBoundedBlockingQueue<V> extends RedissonQueue<V> implements
                     return;
                 }
                 
+                if (future.getNow() == null) {
+                    result.trySuccess(takeFuture.getNow());
+                    return;
+                }
                 createSemaphore(null).releaseAsync().addListener(new FutureListener<Void>() {
                     @Override
                     public void operationComplete(Future<Void> future) throws Exception {
@@ -243,13 +246,7 @@ public class RedissonBoundedBlockingQueue<V> extends RedissonQueue<V> implements
      */
     @Override
     public RFuture<V> pollFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
-        List<Object> params = new ArrayList<Object>(queueNames.length + 1);
-        params.add(getName());
-        for (Object name : queueNames) {
-            params.add(name);
-        }
-        params.add(unit.toSeconds(timeout));
-        RFuture<V> takeFuture = commandExecutor.writeAsync(getName(), codec, RedisCommands.BLPOP_VALUE, params.toArray());
+        RFuture<V> takeFuture = commandExecutor.pollFromAnyAsync(getName(), codec, RedisCommands.BLPOP_VALUE, toSeconds(timeout, unit), queueNames);
         return wrapTakeFuture(takeFuture);
     }
 
@@ -365,6 +362,12 @@ public class RedissonBoundedBlockingQueue<V> extends RedissonQueue<V> implements
     @Override
     public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, getName(), getSemaphoreName());
+    }
+    
+    @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), getSemaphoreName());
+        return super.sizeInMemoryAsync(keys);
     }
 
     @Override

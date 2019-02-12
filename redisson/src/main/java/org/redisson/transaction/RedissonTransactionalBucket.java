@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.redisson.RedissonBucket;
-import org.redisson.RedissonLock;
 import org.redisson.api.RFuture;
 import org.redisson.api.RLock;
 import org.redisson.client.codec.Codec;
@@ -56,17 +55,20 @@ public class RedissonTransactionalBucket<V> extends RedissonBucket<V> {
     private final AtomicBoolean executed;
     private final List<TransactionalOperation> operations;
     private Object state;
+    private final String transactionId;
     
-    public RedissonTransactionalBucket(CommandAsyncExecutor commandExecutor, String name, List<TransactionalOperation> operations, AtomicBoolean executed) {
+    public RedissonTransactionalBucket(CommandAsyncExecutor commandExecutor, String name, List<TransactionalOperation> operations, AtomicBoolean executed, String transactionId) {
         super(commandExecutor, name);
         this.operations = operations;
         this.executed = executed;
+        this.transactionId = transactionId;
     }
 
-    public RedissonTransactionalBucket(Codec codec, CommandAsyncExecutor commandExecutor, String name, List<TransactionalOperation> operations, AtomicBoolean executed) {
+    public RedissonTransactionalBucket(Codec codec, CommandAsyncExecutor commandExecutor, String name, List<TransactionalOperation> operations, AtomicBoolean executed, String transactionId) {
         super(codec, commandExecutor, name);
         this.operations = operations;
         this.executed = executed;
+        this.transactionId = transactionId;
     }
     
     @Override
@@ -496,7 +498,7 @@ public class RedissonTransactionalBucket<V> extends RedissonBucket<V> {
     }
 
     private RLock getLock() {
-        return new RedissonLock(commandExecutor, getLockName());
+        return new RedissonTransactionalLock(commandExecutor, getLockName(), transactionId);
     }
 
     private String getLockName() {

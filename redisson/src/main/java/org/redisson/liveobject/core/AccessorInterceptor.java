@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.redisson.liveobject.core;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
@@ -24,15 +25,15 @@ import org.redisson.RedissonReference;
 import org.redisson.api.RLiveObject;
 import org.redisson.api.RMap;
 import org.redisson.api.RObject;
+import org.redisson.api.RSetMultimap;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.annotation.REntity;
 import org.redisson.api.annotation.REntity.TransformationMode;
 import org.redisson.api.annotation.RId;
-import org.redisson.client.codec.Codec;
+import org.redisson.api.annotation.RIndex;
 import org.redisson.liveobject.misc.ClassUtils;
 import org.redisson.liveobject.misc.Introspectior;
 import org.redisson.liveobject.resolver.NamingScheme;
-import org.redisson.misc.RedissonObjectFactory;
 
 import net.bytebuddy.implementation.bind.annotation.AllArguments;
 import net.bytebuddy.implementation.bind.annotation.FieldValue;
@@ -47,6 +48,7 @@ import net.bytebuddy.implementation.bind.annotation.This;
  * class.
  *
  * @author Rui Gu (https://github.com/jackygurui)
+ * @author Nikita Koksharov
  */
 public class AccessorInterceptor {
 
@@ -71,12 +73,13 @@ public class AccessorInterceptor {
         }
 
         String fieldName = getFieldName(method);
-        Class<?> fieldType = ClassUtils.getDeclaredField(me.getClass().getSuperclass(), fieldName).getType();
+        Field field = ClassUtils.getDeclaredField(me.getClass().getSuperclass(), fieldName);
+        Class<?> fieldType = field.getType();
         
         if (isGetter(method, fieldName)) {
             Object result = liveMap.get(fieldName);
             if (result == null) {
-                RObject ar = objectBuilder.createObject(((RLiveObject) me).getLiveObjectId(), me.getClass().getSuperclass(), fieldType, fieldName);
+                RObject ar = objectBuilder.createObject(((RLiveObject) me).getLiveObjectId(), me.getClass().getSuperclass(), fieldType, fieldName, redisson);
                 if (ar != null) {
                     objectBuilder.store(ar, fieldName, liveMap);
                     return ar;
@@ -84,10 +87,13 @@ public class AccessorInterceptor {
             }
             
             if (result != null && fieldType.isEnum()) {
-                return Enum.valueOf((Class)fieldType, (String)result);
+                if (result instanceof String) {
+                    return Enum.valueOf((Class)fieldType, (String)result);
+                }
+                return result;
             }
             if (result instanceof RedissonReference) {
-                return RedissonObjectFactory.fromReference(redisson, (RedissonReference) result);
+                return objectBuilder.fromReference(redisson, (RedissonReference) result);
             }
             return result;
         }
@@ -100,11 +106,10 @@ public class AccessorInterceptor {
             if (arg instanceof RLiveObject) {
                 RLiveObject liveObject = (RLiveObject) arg;
                 
+                storeIndex(field, me, liveObject.getLiveObjectId());
+                
                 Class<? extends Object> rEntity = liveObject.getClass().getSuperclass();
-                REntity anno = ClassUtils.getAnnotation(rEntity, REntity.class);
-                NamingScheme ns = anno.namingScheme()
-                        .getDeclaredConstructor(Codec.class)
-                        .newInstance(redisson.getConfig().getReferenceCodecProvider().getCodec(anno, (Class) rEntity));
+                NamingScheme ns = objectBuilder.getNamingScheme(rEntity);
                 liveMap.fastPut(fieldName, new RedissonReference(rEntity,
                         ns.getName(rEntity, fieldType, getREntityIdFieldName(liveObject),
                                 liveObject.getLiveObjectId())));
@@ -116,7 +121,7 @@ public class AccessorInterceptor {
                     && TransformationMode.ANNOTATION_BASED
                             .equals(ClassUtils.getAnnotation(me.getClass().getSuperclass(),
                             REntity.class).fieldTransformation())) {
-                RObject rObject = objectBuilder.createObject(((RLiveObject) me).getLiveObjectId(), me.getClass().getSuperclass(), arg.getClass(), fieldName);
+                RObject rObject = objectBuilder.createObject(((RLiveObject) me).getLiveObjectId(), me.getClass().getSuperclass(), arg.getClass(), fieldName, redisson);
                 if (arg != null) {
                     if (rObject instanceof Collection) {
                         Collection<?> c = (Collection<?>) rObject;
@@ -137,14 +142,36 @@ public class AccessorInterceptor {
                 objectBuilder.store((RObject)arg, fieldName, liveMap);
                 return me;
             }
+
             if (arg == null) {
-                liveMap.remove(fieldName);
+                Object oldArg = liveMap.remove(fieldName);
+                if (field.getAnnotation(RIndex.class) != null) {
+                    NamingScheme namingScheme = objectBuilder.getNamingScheme(me.getClass().getSuperclass());
+                    String indexName = namingScheme.getIndexName(me.getClass().getSuperclass(), fieldName);
+                    RSetMultimap<Object, Object> map = redisson.getSetMultimap(indexName, namingScheme.getCodec());
+                    if (oldArg instanceof RLiveObject) {
+                        map.remove(((RLiveObject) oldArg).getLiveObjectId(), ((RLiveObject) me).getLiveObjectId());
+                    } else {
+                        map.remove(oldArg, ((RLiveObject) me).getLiveObjectId());
+                    }
+                }
             } else {
+                storeIndex(field, me, arg);
+
                 liveMap.fastPut(fieldName, arg);
             }
             return me;
         }
         return superMethod.call();
+    }
+
+    protected void storeIndex(Field field, Object me, Object arg) {
+        if (field.getAnnotation(RIndex.class) != null) {
+            NamingScheme namingScheme = objectBuilder.getNamingScheme(me.getClass().getSuperclass());
+            String indexName = namingScheme.getIndexName(me.getClass().getSuperclass(), field.getName());
+            RSetMultimap<Object, Object> map = redisson.getSetMultimap(indexName, namingScheme.getCodec());
+            map.put(arg, ((RLiveObject) me).getLiveObjectId());
+        }
     }
 
     private String getFieldName(Method method) {

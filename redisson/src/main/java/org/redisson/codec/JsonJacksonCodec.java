@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,10 @@ public class JsonJacksonCodec extends BaseCodec {
     public static final JsonJacksonCodec INSTANCE = new JsonJacksonCodec();
 
     @JsonIdentityInfo(generator=ObjectIdGenerators.IntSequenceGenerator.class, property="@id")
-    @JsonAutoDetect(fieldVisibility = Visibility.NONE, getterVisibility = Visibility.PUBLIC_ONLY, setterVisibility = Visibility.PUBLIC_ONLY, isGetterVisibility = Visibility.PUBLIC_ONLY)
+    @JsonAutoDetect(fieldVisibility = Visibility.ANY, 
+                    getterVisibility = Visibility.PUBLIC_ONLY, 
+                    setterVisibility = Visibility.NONE, 
+                    isGetterVisibility = Visibility.NONE)
     public static class ThrowableMixIn {
         
     }
@@ -99,6 +102,10 @@ public class JsonJacksonCodec extends BaseCodec {
     
     public JsonJacksonCodec(ClassLoader classLoader) {
         this(createObjectMapper(classLoader, new ObjectMapper()));
+    }
+
+    public JsonJacksonCodec(ClassLoader classLoader, JsonJacksonCodec codec) {
+        this(createObjectMapper(classLoader, codec.mapObjectMapper.copy()));
     }
     
     protected static ObjectMapper createObjectMapper(ClassLoader classLoader, ObjectMapper om) {

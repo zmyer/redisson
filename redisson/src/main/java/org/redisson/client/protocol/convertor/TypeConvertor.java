@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,12 @@ package org.redisson.client.protocol.convertor;
 
 import org.redisson.api.RType;
 
-public class TypeConvertor extends SingleConvertor<RType> {
+/**
+ * 
+ * @author Nikita Koksharov
+ *
+ */
+public class TypeConvertor implements Convertor<RType> {
 
     @Override
     public RType convert(Object obj) {

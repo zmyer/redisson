@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  */
 package org.redisson.api;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 /**
- * {@link java.util.Queue} backed by Redis
+ * Reactive interface for Queue object
  *
  * @author Nikita Koksharov
  *
@@ -26,12 +26,12 @@ import org.reactivestreams.Publisher;
  */
 public interface RQueueReactive<V> extends RCollectionReactive<V> {
 
-    Publisher<V> peek();
+    Mono<V> peek();
 
-    Publisher<V> poll();
+    Mono<V> poll();
 
-    Publisher<Integer> offer(V e);
+    Mono<Boolean> offer(V e);
 
-    Publisher<V> pollLastAndOfferFirstTo(String queueName);
+    Mono<V> pollLastAndOfferFirstTo(String queueName);
 
 }

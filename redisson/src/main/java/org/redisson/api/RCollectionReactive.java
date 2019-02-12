@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,11 @@ import java.util.Collection;
 
 import org.reactivestreams.Publisher;
 
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
 /**
+ * Common reactive interface for collection object
  * 
  * @author Nikita Koksharov
  *
@@ -27,24 +31,92 @@ import org.reactivestreams.Publisher;
  */
 public interface RCollectionReactive<V> extends RExpirableReactive {
 
-    Publisher<V> iterator();
+    /**
+     * Returns iterator over collection elements
+     * 
+     * @return iterator
+     */
+    Flux<V> iterator();
 
-    Publisher<Boolean> retainAll(Collection<?> c);
+    /**
+     * Retains only the elements in this collection that are contained in the
+     * specified collection (optional operation).
+     *
+     * @param c collection containing elements to be retained in this collection
+     * @return <code>true</code> if this collection changed as a result of the call
+     */
+    Mono<Boolean> retainAll(Collection<?> c);
 
-    Publisher<Boolean> removeAll(Collection<?> c);
+    /**
+     * Removes all of this collection's elements that are also contained in the
+     * specified collection (optional operation).
+     *
+     * @param c collection containing elements to be removed from this collection
+     * @return <code>true</code> if this collection changed as a result of the
+     *         call
+     */
+    Mono<Boolean> removeAll(Collection<?> c);
 
-    Publisher<Boolean> contains(V o);
+    /**
+     * Returns <code>true</code> if this collection contains encoded state of the specified element.
+     *
+     * @param o element whose presence in this collection is to be tested
+     * @return <code>true</code> if this collection contains the specified
+     *         element and <code>false</code> otherwise
+     */
+    Mono<Boolean> contains(V o);
 
-    Publisher<Boolean> containsAll(Collection<?> c);
+    /**
+     * Returns <code>true</code> if this collection contains all of the elements
+     * in the specified collection.
+     *
+     * @param  c collection to be checked for containment in this collection
+     * @return <code>true</code> if this collection contains all of the elements
+     *         in the specified collection
+     */
+    Mono<Boolean> containsAll(Collection<?> c);
 
-    Publisher<Boolean> remove(V o);
+    /**
+     * Removes a single instance of the specified element from this
+     * collection, if it is present (optional operation).
+     *
+     * @param o element to be removed from this collection, if present
+     * @return <code>true</code> if an element was removed as a result of this call
+     */
+    Mono<Boolean> remove(V o);
 
-    Publisher<Integer> size();
+    /**
+     * Returns number of elements in this collection.
+     *
+     * @return size of collection
+     */
+    Mono<Integer> size();
 
-    Publisher<Integer> add(V e);
+    /**
+     * Adds element into this collection.
+     * 
+     * @param e - element to add
+     * @return <code>true</code> if an element was added 
+     *          and <code>false</code> if it is already present
+     */
+    Mono<Boolean> add(V e);
 
-    Publisher<Integer> addAll(Publisher<? extends V> c);
-
-    Publisher<Integer> addAll(Collection<? extends V> c);
+    /**
+     * Adds all elements contained in the specified collection
+     * 
+     * @param c - collection of elements to add
+     * @return <code>true</code> if at least one element was added 
+     *          and <code>false</code> if all elements are already present
+     */
+    Mono<Boolean> addAll(Publisher<? extends V> c);
+    
+    /**
+     * Adds all elements contained in the specified collection
+     * 
+     * @param c - collection of elements to add
+     * @return <code>true</code> if at least one element was added 
+     *          and <code>false</code> if all elements are already present
+     */
+    Mono<Boolean> addAll(Collection<? extends V> c);
 
 }

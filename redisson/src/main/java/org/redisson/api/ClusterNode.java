@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,6 @@ import java.util.Map;
  *
  */
 public interface ClusterNode extends Node {
-
-    // Use {@link #clusterInfo()}
-    @Deprecated
-    Map<String, String> info();
 
     /**
      * Execute CLUSTER INFO operation.

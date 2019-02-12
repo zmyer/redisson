@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,26 @@
  */
 package org.redisson.client.protocol.convertor;
 
-public class IntegerReplayConvertor extends SingleConvertor<Integer> {
+/**
+ * 
+ * @author Nikita Koksharov
+ *
+ */
+public class IntegerReplayConvertor implements Convertor<Integer> {
+
+    private Integer nullValue;
+    
+    public IntegerReplayConvertor() {
+    }
+    
+    public IntegerReplayConvertor(Integer nullValue) {
+        this.nullValue = nullValue;
+    }
 
     @Override
     public Integer convert(Object obj) {
         if (obj == null) {
-            return null;
+            return nullValue;
         }
         return ((Long) obj).intValue();
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -148,11 +148,13 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
         return removeAsync(o, 1);
     }
 
-    protected RFuture<Boolean> removeAsync(Object o, int count) {
+    @Override
+    public RFuture<Boolean> removeAsync(Object o, int count) {
         return commandExecutor.writeAsync(getName(), codec, LREM_SINGLE, getName(), count, encode(o));
     }
 
-    protected boolean remove(Object o, int count) {
+    @Override
+    public boolean remove(Object o, int count) {
         return get(removeAsync(o, count));
     }
 
@@ -391,17 +393,19 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
     public void add(int index, V element) {
         addAll(index, Collections.singleton(element));
     }
-
+    
+    @Override
+    public RFuture<Boolean> addAsync(int index, V element) {
+        return addAllAsync(index, Collections.singleton(element));
+    }
+    
     @Override
     public V remove(int index) {
-        return remove((long) index);
-    }
-
-    public V remove(long index) {
         return get(removeAsync(index));
     }
     
-    public RFuture<V> removeAsync(long index) {
+    @Override
+    public RFuture<V> removeAsync(int index) {
         if (index == 0) {
             return commandExecutor.writeAsync(getName(), codec, LPOP, getName());
         }
@@ -421,7 +425,7 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
     }
     
     @Override
-    public RFuture<Void> fastRemoveAsync(long index) {
+    public RFuture<Void> fastRemoveAsync(int index) {
         return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_VOID,
                 "redis.call('lset', KEYS[1], ARGV[1], 'DELETED_BY_REDISSON');" +
                 "redis.call('lrem', KEYS[1], 1, 'DELETED_BY_REDISSON');",
@@ -728,7 +732,7 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
     public <T> RFuture<Collection<T>> readSortAsync(String byPattern, List<String> getPatterns, SortOrder order) {
         return readSortAsync(byPattern, getPatterns, order, -1, -1);
     }
-    
+
     @Override
     public <T> Collection<T> readSort(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
         return (Collection<T>)get(readSortAsync(byPattern, getPatterns, order, offset, count));
@@ -736,30 +740,69 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
 
     @Override
     public <T> RFuture<Collection<T>> readSortAsync(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
-        List<Object> params = new ArrayList<Object>();
-        params.add(getName());
-        if (byPattern != null) {
-            params.add("BY");
-            params.add(byPattern);
-        }
-        if (offset != -1 && count != -1) {
-            params.add("LIMIT");
-        }
-        if (offset != -1) {
-            params.add(offset);
-        }
-        if (count != -1) {
-            params.add(count);
-        }
-        for (String pattern : getPatterns) {
-            params.add("GET");
-            params.add(pattern);
-        }
-        params.add(order);
-        
-        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, params.toArray());
+        return readSortAsync(byPattern, getPatterns, order, offset, count, false);
     }
-    
+
+    @Override
+    public List<V> readSortAlpha(SortOrder order) {
+        return get(readSortAlphaAsync(order));
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(SortOrder order) {
+        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, getName(), "ALPHA", order);
+    }
+
+    @Override
+    public List<V> readSortAlpha(SortOrder order, int offset, int count) {
+        return get(readSortAlphaAsync(order, offset, count));
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(SortOrder order, int offset, int count) {
+        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, getName(), "LIMIT", offset, count, "ALPHA", order);
+    }
+
+    @Override
+    public List<V> readSortAlpha(String byPattern, SortOrder order) {
+        return get(readSortAlphaAsync(byPattern, order));
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(String byPattern, SortOrder order) {
+        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, getName(), "BY", byPattern, "ALPHA", order);
+    }
+
+    @Override
+    public List<V> readSortAlpha(String byPattern, SortOrder order, int offset, int count) {
+        return get(readSortAlphaAsync(byPattern, order, offset, count));
+    }
+
+    @Override
+    public RFuture<List<V>> readSortAlphaAsync(String byPattern, SortOrder order, int offset, int count) {
+        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, getName(), "BY", byPattern, "LIMIT", offset, count, "ALPHA", order);
+    }
+
+    @Override
+    public <T> Collection<T> readSortAlpha(String byPattern, List<String> getPatterns, SortOrder order) {
+        return (Collection<T>)get(readSortAlphaAsync(byPattern, getPatterns, order));
+    }
+
+    @Override
+    public <T> RFuture<Collection<T>> readSortAlphaAsync(String byPattern, List<String> getPatterns, SortOrder order) {
+        return readSortAlphaAsync(byPattern, getPatterns, order, -1, -1);
+    }
+
+    @Override
+    public <T> Collection<T> readSortAlpha(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
+        return (Collection<T>)get(readSortAlphaAsync(byPattern, getPatterns, order, offset, count));
+    }
+
+    @Override
+    public <T> RFuture<Collection<T>> readSortAlphaAsync(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count) {
+        return readSortAsync(byPattern, getPatterns, order, offset, count, true);
+    }
+
     @Override
     public int sortTo(String destName, SortOrder order) {
         return get(sortToAsync(destName, order));
@@ -841,6 +884,38 @@ public class RedissonList<V> extends RedissonExpirable implements RList<V> {
         params.add(destName);
         
         return commandExecutor.writeAsync(getName(), codec, RedisCommands.SORT_TO, params.toArray());
+    }
+
+    private <T> RFuture<Collection<T>> readSortAsync(String byPattern, List<String> getPatterns, SortOrder order, int offset, int count, boolean alpha) {
+        List<Object> params = new ArrayList<Object>();
+        params.add(getName());
+        if (byPattern != null) {
+            params.add("BY");
+            params.add(byPattern);
+        }
+        if (offset != -1 && count != -1) {
+            params.add("LIMIT");
+        }
+        if (offset != -1) {
+            params.add(offset);
+        }
+        if (count != -1) {
+            params.add(count);
+        }
+        if (getPatterns != null) {
+            for (String pattern : getPatterns) {
+                params.add("GET");
+                params.add(pattern);
+            }
+        }
+        if (alpha) {
+            params.add("ALPHA");
+        }
+        if (order != null) {
+            params.add(order);
+        }
+
+        return commandExecutor.readAsync(getName(), codec, RedisCommands.SORT_LIST, params.toArray());
     }
 
 }

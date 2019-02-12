@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,27 @@
  */
 package org.redisson.liveobject.resolver;
 
+import org.redisson.client.codec.Codec;
+
 /**
  *
  * @author Rui Gu (https://github.com/jackygurui)
+ * @author Nikita Koksharov
  */
 public interface NamingScheme {
 
-    public String getName(Class<?> entityClass, Class<?> idFieldClass, String idFieldName, Object idValue);
+    String getName(Class<?> entityClass, Class<?> idFieldClass, String idFieldName, Object idValue);
     
-    public String getFieldReferenceName(Class<?> entityClass, Object idValue, Class<?> fieldClass, String fieldName, Object fieldValue);
+    String getIndexName(Class<?> entityClass, String fieldName);
+    
+    String getFieldReferenceName(Class<?> entityClass, Object idValue, Class<?> fieldClass, String fieldName, Object fieldValue);
 
-    public String resolveClassName(String name);
+    String resolveClassName(String name);
 
-    public String resolveIdFieldName(String name);
+    String resolveIdFieldName(String name);
 
-    public Object resolveId(String name);
+    Object resolveId(String name);
+    
+    Codec getCodec();
     
 }

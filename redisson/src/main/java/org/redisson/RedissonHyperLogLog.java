@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ public class RedissonHyperLogLog<V> extends RedissonExpirable implements RHyperL
         List<Object> args = new ArrayList<Object>(objects.size() + 1);
         args.add(getName());
         encode(args, objects);
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.PFADD, getName(), args.toArray());
+        return commandExecutor.writeAsync(getName(), codec, RedisCommands.PFADD, args.toArray());
     }
 
     @Override

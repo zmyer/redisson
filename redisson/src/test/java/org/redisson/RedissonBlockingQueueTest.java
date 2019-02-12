@@ -17,11 +17,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.redisson.ClusterRunner.ClusterProcesses;
 import org.redisson.RedisRunner.RedisProcess;
 import org.redisson.api.RBlockingQueue;
 import org.redisson.api.RFuture;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
+import org.redisson.connection.balancer.RandomLoadBalancer;
 
 public class RedissonBlockingQueueTest extends RedissonQueueTest {
 
@@ -162,6 +164,84 @@ public class RedissonBlockingQueueTest extends RedissonQueueTest {
         runner.stop();
     }
 
+    @Test
+    public void testFailoverInSentinel() throws Exception {
+        RedisRunner.RedisProcess master = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .run();
+        RedisRunner.RedisProcess slave1 = new RedisRunner()
+                .port(6380)
+                .nosave()
+                .randomDir()
+                .slaveof("127.0.0.1", 6379)
+                .run();
+        RedisRunner.RedisProcess slave2 = new RedisRunner()
+                .port(6381)
+                .nosave()
+                .randomDir()
+                .slaveof("127.0.0.1", 6379)
+                .run();
+        RedisRunner.RedisProcess sentinel1 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26379)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        RedisRunner.RedisProcess sentinel2 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26380)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        RedisRunner.RedisProcess sentinel3 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26381)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        
+        Thread.sleep(5000); 
+        
+        Config config = new Config();
+        config.useSentinelServers()
+            .setLoadBalancer(new RandomLoadBalancer())
+            .addSentinelAddress(sentinel3.getRedisServerAddressAndPort()).setMasterName("myMaster");
+        RedissonClient redisson = Redisson.create(config);
+        
+        RBlockingQueue<Integer> queue1 = getQueue(redisson);
+        RFuture<Integer> f = queue1.takeAsync();
+        f.await(1, TimeUnit.SECONDS);
+        
+        master.stop();
+        System.out.println("master " + master.getRedisServerAddressAndPort() + " stopped!");
+        
+        Thread.sleep(TimeUnit.SECONDS.toMillis(70));
+        
+        master = new RedisRunner()
+                .port(master.getRedisServerPort())
+                .nosave()
+                .randomDir()
+                .run();
+
+        System.out.println("master " + master.getRedisServerAddressAndPort() + " started!");
+        
+        Thread.sleep(25000);
+        
+        queue1.put(1);
+        assertThat(f.get()).isEqualTo(1);
+        
+        redisson.shutdown();
+        sentinel1.stop();
+        sentinel2.stop();
+        sentinel3.stop();
+        master.stop();
+        slave1.stop();
+        slave2.stop();
+    }
     
     @Test
     public void testTakeReattach() throws Exception {
@@ -235,6 +315,52 @@ public class RedissonBlockingQueueTest extends RedissonQueueTest {
         redisson.shutdown();
     }
 
+    @Test
+    public void testPollFromAnyInCluster() throws Exception {
+        RedisRunner master1 = new RedisRunner().port(6890).randomDir().nosave();
+        RedisRunner master2 = new RedisRunner().port(6891).randomDir().nosave();
+        RedisRunner master3 = new RedisRunner().port(6892).randomDir().nosave();
+        RedisRunner slave1 = new RedisRunner().port(6900).randomDir().nosave();
+        RedisRunner slave2 = new RedisRunner().port(6901).randomDir().nosave();
+        RedisRunner slave3 = new RedisRunner().port(6902).randomDir().nosave();
+        
+        ClusterRunner clusterRunner = new ClusterRunner()
+                .addNode(master1, slave1)
+                .addNode(master2, slave2)
+                .addNode(master3, slave3);
+        ClusterProcesses process = clusterRunner.run();
+        
+        Thread.sleep(5000); 
+        
+        Config config = new Config();
+        config.useClusterServers()
+        .setLoadBalancer(new RandomLoadBalancer())
+        .addNodeAddress(process.getNodes().stream().findAny().get().getRedisServerAddressAndPort());
+        RedissonClient redisson = Redisson.create(config);
+
+        final RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("queue:pollany");
+        Executors.newSingleThreadScheduledExecutor().schedule(() -> {
+            RBlockingQueue<Integer> queue2 = redisson.getBlockingQueue("queue:pollany1");
+            RBlockingQueue<Integer> queue3 = redisson.getBlockingQueue("queue:pollany2");
+            try {
+                queue3.put(2);
+                queue1.put(1);
+                queue2.put(3);
+            } catch (InterruptedException e) {
+                Assert.fail();
+            }
+        }, 3, TimeUnit.SECONDS);
+
+        long s = System.currentTimeMillis();
+        int l = queue1.pollFromAny(4, TimeUnit.SECONDS, "queue:pollany1", "queue:pollany2");
+
+        Assert.assertEquals(2, l);
+        Assert.assertTrue(System.currentTimeMillis() - s > 2000);
+        
+        redisson.shutdown();
+        process.shutdown();
+    }
+    
     @Test
     public void testPollFromAny() throws InterruptedException {
         final RBlockingQueue<Integer> queue1 = redisson.getBlockingQueue("queue:pollany");
@@ -341,6 +467,18 @@ public class RedissonBlockingQueueTest extends RedissonQueueTest {
         assertThat(queue2).containsExactly(3, 4, 5, 6);
     }
 
+    @Test
+    public void testDrainToSingle() {
+        RBlockingQueue<Integer> queue = getQueue();
+        Assert.assertTrue(queue.add(1));
+        Assert.assertEquals(1, queue.size());
+        Set<Integer> batch = new HashSet<Integer>();
+        int count = queue.drainTo(batch);
+        Assert.assertEquals(1, count);
+        Assert.assertEquals(1, batch.size());
+        Assert.assertTrue(queue.isEmpty());
+    }
+    
     @Test
     public void testDrainTo() {
         RBlockingQueue<Integer> queue = getQueue();

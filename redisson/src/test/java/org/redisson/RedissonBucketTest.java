@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 import org.redisson.RedisRunner.FailedToStartRedisException;
 import org.redisson.RedisRunner.RedisProcess;
@@ -17,6 +18,49 @@ import org.redisson.config.Config;
 
 public class RedissonBucketTest extends BaseTest {
 
+    @Test
+    public void testSizeInMemory() {
+        Assume.assumeTrue(RedisRunner.getDefaultRedisServerInstance().getRedisVersion().compareTo("4.0.0") > 0);
+        RBucket<Integer> al = redisson.getBucket("test");
+        al.set(1234);
+        assertThat(al.sizeInMemory()).isEqualTo(55);
+    }
+    
+    @Test
+    public void testDumpAndRestore() {
+        RBucket<Integer> al = redisson.getBucket("test");
+        al.set(1234);
+        
+        byte[] state = al.dump();
+        al.delete();
+        
+        al.restore(state);
+        assertThat(al.get()).isEqualTo(1234);
+        
+        RBucket<Integer> bucket = redisson.getBucket("test2");
+        bucket.set(300);
+        bucket.restoreAndReplace(state);
+        assertThat(bucket.get()).isEqualTo(1234);
+    }
+    
+    @Test
+    public void testDumpAndRestoreTTL() {
+        RBucket<Integer> al = redisson.getBucket("test");
+        al.set(1234);
+        
+        byte[] state = al.dump();
+        al.delete();
+        
+        al.restore(state, 10, TimeUnit.SECONDS);
+        assertThat(al.get()).isEqualTo(1234);
+        assertThat(al.remainTimeToLive()).isBetween(9500L, 10000L);
+        
+        RBucket<Integer> bucket = redisson.getBucket("test2");
+        bucket.set(300);
+        bucket.restoreAndReplace(state, 10, TimeUnit.SECONDS);
+        assertThat(bucket.get()).isEqualTo(1234);
+    }
+    
     @Test
     public void testGetAndDelete() {
         RBucket<Integer> al = redisson.getBucket("test");
@@ -184,6 +228,11 @@ public class RedissonBucketTest extends BaseTest {
         String value = "somevalue";
         bucket.set(value);
         Assert.assertEquals(value, bucket.get());
+        
+        bucket.set(null);
+        bucket.set(null, 1, TimeUnit.DAYS);
+        
+        assertThat(bucket.isExists()).isFalse();
     }
 
     @Test

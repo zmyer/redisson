@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -224,6 +224,7 @@ public interface RMapCacheAsync<K, V> extends RMapAsync<K, V> {
     /**
      * Remaining time to live of map entry associated with a <code>key</code>. 
      *
+     * @param key - map key
      * @return time in milliseconds
      *          -2 if the key does not exist.
      *          -1 if the key exists but has no associated expire.

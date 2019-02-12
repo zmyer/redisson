@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ public interface RRateLimiterAsync extends RObjectAsync {
      * @param rate - rate
      * @param rateInterval - rate time interval
      * @param rateIntervalUnit - rate time interval unit
-     * @return
+     * @return {@code true} if rate was set and {@code false}
+     *         otherwise
      */
     RFuture<Boolean> trySetRateAsync(RateType mode, long rate, long rateInterval, RateIntervalUnit rateIntervalUnit);
 
@@ -74,6 +75,7 @@ public interface RRateLimiterAsync extends RObjectAsync {
      * <p>Acquires a permit, if one is available and returns immediately,
      * reducing the number of available permits by one.
      * 
+     * @return void
      */
     RFuture<Void> acquireAsync();
     
@@ -85,7 +87,8 @@ public interface RRateLimiterAsync extends RObjectAsync {
      * and returns immediately, reducing the number of available permits 
      * by the given amount.
      * 
-     * @param permits
+     * @param permits the number of permits to acquire
+     * @return void
      */
     RFuture<Void> acquireAsync(long permits);
     

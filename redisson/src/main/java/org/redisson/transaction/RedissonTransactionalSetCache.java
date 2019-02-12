@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.redisson.api.mapreduce.RCollectionMapReduce;
 import org.redisson.client.RedisClient;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.decoder.ListScanResult;
-import org.redisson.client.protocol.decoder.ScanObjectEntry;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.transaction.operation.TransactionalOperation;
 
@@ -44,19 +43,19 @@ public class RedissonTransactionalSetCache<V> extends RedissonSetCache<V> {
     private final AtomicBoolean executed;
     
     public RedissonTransactionalSetCache(CommandAsyncExecutor commandExecutor, String name,
-            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed) {
+            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
         super(null, commandExecutor, name, null);
         this.executed = executed;
         RedissonSetCache<V> innerSet = new RedissonSetCache<V>(null, commandExecutor, name, null);
-        this.transactionalSet = new TransactionalSetCache<V>(commandExecutor, timeout, operations, innerSet);
+        this.transactionalSet = new TransactionalSetCache<V>(commandExecutor, timeout, operations, innerSet, transactionId);
     }
     
     public RedissonTransactionalSetCache(Codec codec, CommandAsyncExecutor commandExecutor, String name,
-            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed) {
+            List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
         super(null, commandExecutor, name, null);
         this.executed = executed;
         RedissonSetCache<V> innerSet = new RedissonSetCache<V>(codec, null, commandExecutor, name, null);
-        this.transactionalSet = new TransactionalSetCache<V>(commandExecutor, timeout, operations, innerSet);
+        this.transactionalSet = new TransactionalSetCache<V>(commandExecutor, timeout, operations, innerSet, transactionId);
     }
 
 
@@ -96,9 +95,9 @@ public class RedissonTransactionalSetCache<V> extends RedissonSetCache<V> {
     }
 
     @Override
-    public ListScanResult<ScanObjectEntry> scanIterator(String name, RedisClient client, long startPos, String pattern) {
+    public ListScanResult<Object> scanIterator(String name, RedisClient client, long startPos, String pattern, int count) {
         checkState();
-        return transactionalSet.scanIterator(name, client, startPos, pattern);
+        return transactionalSet.scanIterator(name, client, startPos, pattern, count);
     }
 
     @Override

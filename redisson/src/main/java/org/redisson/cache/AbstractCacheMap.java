@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -221,14 +221,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
 
     protected abstract void onMapFull();
 
-    boolean isFull() {
-        if (size == 0) {
-            return false;
-        }
-        return map.size() >= size;
-    }
-    
-    private boolean isFull(K key) {
+    protected boolean isFull(K key) {
         if (size == 0) {
             return false;
         }

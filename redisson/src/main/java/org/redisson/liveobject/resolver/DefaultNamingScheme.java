@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,17 @@ import java.io.IOException;
 
 import org.redisson.client.codec.Codec;
 import org.redisson.client.handler.State;
-import org.redisson.codec.JsonJacksonCodec;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 
 /**
  *
  * @author Rui Gu (https://github.com/jackygurui)
+ * @author Nikita Koksharov
  */
 public class DefaultNamingScheme extends AbstractNamingScheme implements NamingScheme {
-
-    public static final DefaultNamingScheme INSTANCE = new DefaultNamingScheme(new JsonJacksonCodec());
 
     public DefaultNamingScheme(Codec codec) {
         super(codec);
@@ -72,10 +70,9 @@ public class DefaultNamingScheme extends AbstractNamingScheme implements NamingS
     public Object resolveId(String name) {
         String decode = name.substring(name.indexOf("{") + 1, name.indexOf("}"));
         
-        ByteBuf b = ByteBufAllocator.DEFAULT.buffer(decode.length()/2); 
+        ByteBuf b = Unpooled.wrappedBuffer(ByteBufUtil.decodeHexDump(decode)); 
         try {
-            b.writeBytes(ByteBufUtil.decodeHexDump(decode));
-            return codec.getMapKeyDecoder().decode(b, new State(false));
+            return codec.getMapKeyDecoder().decode(b, new State());
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to decode [" + decode + "] into object", ex);
         } finally {
@@ -89,6 +86,11 @@ public class DefaultNamingScheme extends AbstractNamingScheme implements NamingS
         } finally {
             bytes.release();
         }
+    }
+
+    @Override
+    public String getIndexName(Class<?> entityClass, String fieldName) {
+        return "redisson_live_object_index:{" + entityClass.getName() + "}:" + fieldName;
     }
 
 }

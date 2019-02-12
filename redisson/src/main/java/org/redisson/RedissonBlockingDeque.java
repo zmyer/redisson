@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,12 +39,12 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     private final RedissonBlockingQueue<V> blockingQueue;
 
-    protected RedissonBlockingDeque(CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
+    public RedissonBlockingDeque(CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(commandExecutor, name, redisson);
         blockingQueue = new RedissonBlockingQueue<V>(commandExecutor, name, redisson);
     }
 
-    protected RedissonBlockingDeque(Codec codec, CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
+    public RedissonBlockingDeque(Codec codec, CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(codec, commandExecutor, name, redisson);
         blockingQueue = new RedissonBlockingQueue<V>(codec, commandExecutor, name, redisson);
     }
@@ -233,13 +233,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public RFuture<V> pollLastFromAnyAsync(long timeout, TimeUnit unit, String ... queueNames) {
-        List<Object> params = new ArrayList<Object>(queueNames.length + 1);
-        params.add(getName());
-        for (Object name : queueNames) {
-            params.add(name);
-        }
-        params.add(toSeconds(timeout, unit));
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.BRPOP_VALUE, params.toArray());
+        return commandExecutor.pollFromAnyAsync(getName(), codec, RedisCommands.BRPOP_VALUE, toSeconds(timeout, unit), queueNames);
     }
 
     @Override

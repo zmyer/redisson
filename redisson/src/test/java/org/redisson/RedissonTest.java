@@ -7,11 +7,12 @@ import static org.redisson.BaseTest.createInstance;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,8 +33,8 @@ import org.redisson.ClusterRunner.ClusterProcesses;
 import org.redisson.RedisRunner.RedisProcess;
 import org.redisson.api.ClusterNode;
 import org.redisson.api.Node;
-import org.redisson.api.NodeType;
 import org.redisson.api.Node.InfoSection;
+import org.redisson.api.NodeType;
 import org.redisson.api.NodesGroup;
 import org.redisson.api.RFuture;
 import org.redisson.api.RMap;
@@ -43,21 +44,28 @@ import org.redisson.client.RedisClientConfig;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisConnectionException;
 import org.redisson.client.RedisOutOfMemoryException;
+import org.redisson.client.codec.BaseCodec;
 import org.redisson.client.codec.StringCodec;
+import org.redisson.client.handler.State;
+import org.redisson.client.protocol.Decoder;
+import org.redisson.client.protocol.Encoder;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.Time;
-import org.redisson.client.protocol.decoder.ListScanResult;
-import org.redisson.client.protocol.decoder.ScanObjectEntry;
 import org.redisson.cluster.ClusterNodeInfo;
 import org.redisson.cluster.ClusterNodeInfo.Flag;
 import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.codec.SerializationCodec;
 import org.redisson.config.Config;
+import org.redisson.config.ReadMode;
+import org.redisson.config.SubscriptionMode;
 import org.redisson.connection.CRC16;
 import org.redisson.connection.ConnectionListener;
 import org.redisson.connection.MasterSlaveConnectionManager;
 import org.redisson.connection.balancer.RandomLoadBalancer;
-import org.redisson.misc.HashValue;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.CharsetUtil;
 
 public class RedissonTest {
 
@@ -112,67 +120,6 @@ public class RedissonTest {
         
         localRedisson.shutdown();
     }
-    
-    @Test
-    public void testIteratorNotLooped() {
-        RedissonBaseIterator iter = new RedissonBaseIterator() {
-            int i;
-            @Override
-            protected ListScanResult iterator(RedisClient client, long nextIterPos) {
-                i++;
-                if (i == 1) {
-                    return new ListScanResult(13L, Collections.emptyList());
-                }
-                if (i == 2) {
-                    return new ListScanResult(0L, Collections.emptyList());
-                }
-                Assert.fail();
-                return null;
-            }
-
-            @Override
-            protected void remove(Object value) {
-            }
-            
-        };
-        
-        Assert.assertFalse(iter.hasNext());
-    }
-    
-    @Test
-    public void testIteratorNotLooped2() {
-        RedissonBaseIterator<Integer> iter = new RedissonBaseIterator<Integer>() {
-            int i;
-            @Override
-            protected ListScanResult<ScanObjectEntry> iterator(RedisClient client, long nextIterPos) {
-                i++;
-                if (i == 1) {
-                    return new ListScanResult<ScanObjectEntry>(14L, Arrays.asList(new ScanObjectEntry(new HashValue(new long[]{1L}) , 1)));
-                }
-                if (i == 2) {
-                    return new ListScanResult(7L, Collections.emptyList());
-                }
-                if (i == 3) {
-                    return new ListScanResult(0L, Collections.emptyList());
-                }
-                if (i == 4) {
-                    return new ListScanResult(14L, Collections.emptyList());
-                }
-                Assert.fail();
-                return null;
-            }
-
-            @Override
-            protected void remove(ScanObjectEntry value) {
-            }
-            
-        };
-        
-        Assert.assertTrue(iter.hasNext());
-        assertThat(iter.next()).isEqualTo(1);
-        Assert.assertFalse(iter.hasNext());
-    }
-
     
     @BeforeClass
     public static void beforeClass() throws IOException, InterruptedException {
@@ -302,14 +249,19 @@ public class RedissonTest {
         });
 
         assertThat(id).isNotZero();
-
+        
         r.getBucket("1").get();
         Assert.assertEquals(0, p.stop());
+        
+        await().atMost(2, TimeUnit.SECONDS).until(() -> disconnectCounter.get() == 1);
         
         try {
             r.getBucket("1").get();
         } catch (Exception e) {
         }
+        
+        assertThat(connectCounter.get()).isEqualTo(0);
+        assertThat(disconnectCounter.get()).isEqualTo(1);
 
         RedisProcess pp = new RedisRunner()
                 .nosave()
@@ -319,12 +271,11 @@ public class RedissonTest {
 
         r.getBucket("1").get();
 
+        assertThat(connectCounter.get()).isEqualTo(1);
+        assertThat(disconnectCounter.get()).isEqualTo(1);
+
         r.shutdown();
-
         Assert.assertEquals(0, pp.stop());
-
-        await().atMost(2, TimeUnit.SECONDS).until(() -> connectCounter.get() == 1);
-        await().atMost(2, TimeUnit.SECONDS).until(() -> disconnectCounter.get() == 1);
     }
     
     @Test
@@ -414,7 +365,7 @@ public class RedissonTest {
         
         Thread.sleep(15000);
         
-        latch.await();
+        assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue();
 
         int errors = 0;
         int success = 0;
@@ -445,6 +396,277 @@ public class RedissonTest {
         master.stop();
         slave1.stop();
         slave2.stop();
+    }
+    
+    public static class SlowCodec extends BaseCodec {
+
+        private final Encoder encoder = new Encoder() {
+            @Override
+            public ByteBuf encode(Object in) throws IOException {
+                ByteBuf out = ByteBufAllocator.DEFAULT.buffer();
+                out.writeCharSequence(in.toString(), CharsetUtil.UTF_8);
+                return out;
+            }
+        };
+
+        public final Decoder<Object> decoder = new Decoder<Object>() {
+            @Override
+            public Object decode(ByteBuf buf, State state) throws IOException {
+                String str = buf.toString(CharsetUtil.UTF_8);
+                buf.readerIndex(buf.readableBytes());
+                try {
+                    Thread.sleep(2500);
+                } catch (InterruptedException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+                return str;
+            }
+        };
+
+        public SlowCodec() {
+        }
+        
+        public SlowCodec(ClassLoader classLoader) {
+            this();
+        }
+
+
+        @Override
+        public Decoder<Object> getValueDecoder() {
+            return decoder;
+        }
+
+        @Override
+        public Encoder getValueEncoder() {
+            return encoder;
+        }
+
+    }
+    
+    @Test
+    public void testDecoderInExecutor() throws Exception {
+        Config config = new Config();
+        config.setCodec(new SlowCodec());
+        config.setReferenceEnabled(false);
+        config.setThreads(32);
+        config.setNettyThreads(8);
+        config.setDecodeInExecutor(true);
+        config.useSingleServer()
+            .setAddress(RedisRunner.getDefaultRedisServerBindAddressAndPort());
+        RedissonClient redisson = Redisson.create(config);
+        
+        CountDownLatch latch = new CountDownLatch(16);
+        AtomicBoolean hasErrors = new AtomicBoolean();
+        for (int i = 0; i < 16; i++) {
+            Thread t = new Thread() {
+                public void run() {
+                    for (int i = 0; i < 10; i++) {
+                        try {
+                            redisson.getBucket("123").set("1");
+                            redisson.getBucket("123").get();
+                            if (hasErrors.get()) {
+                                latch.countDown();
+                                return;
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            hasErrors.set(true);
+                        }
+                        
+                    }
+                    latch.countDown();
+                };
+            };
+            t.start();
+        }
+        
+        assertThat(latch.await(60, TimeUnit.SECONDS)).isTrue();
+        assertThat(hasErrors).isFalse();
+        
+        redisson.shutdown();
+    }
+
+    
+    @Test
+    public void testFailoverWithoutErrorsInCluster() throws Exception {
+        RedisRunner master1 = new RedisRunner().port(6890).randomDir().nosave();
+        RedisRunner master2 = new RedisRunner().port(6891).randomDir().nosave();
+        RedisRunner master3 = new RedisRunner().port(6892).randomDir().nosave();
+        RedisRunner slave1 = new RedisRunner().port(6900).randomDir().nosave();
+        RedisRunner slave2 = new RedisRunner().port(6901).randomDir().nosave();
+        RedisRunner slave3 = new RedisRunner().port(6902).randomDir().nosave();
+        
+        ClusterRunner clusterRunner = new ClusterRunner()
+                .addNode(master1, slave1)
+                .addNode(master2, slave2)
+                .addNode(master3, slave3);
+        ClusterProcesses process = clusterRunner.run();
+        
+        Config config = new Config();
+        config.useClusterServers()
+        .setRetryAttempts(30)
+        .setReadMode(ReadMode.MASTER)
+        .setSubscriptionMode(SubscriptionMode.MASTER)
+        .setLoadBalancer(new RandomLoadBalancer())
+        .addNodeAddress(process.getNodes().stream().findAny().get().getRedisServerAddressAndPort());
+        RedissonClient redisson = Redisson.create(config);
+       
+        RedisProcess master = process.getNodes().stream().filter(x -> x.getRedisServerPort() == master1.getPort()).findFirst().get();
+        
+        List<RFuture<?>> futures = new ArrayList<RFuture<?>>();
+
+        Set<InetSocketAddress> oldMasters = new HashSet<>();
+        Collection<ClusterNode> masterNodes = redisson.getClusterNodesGroup().getNodes(NodeType.MASTER);
+        for (ClusterNode clusterNode : masterNodes) {
+            oldMasters.add(clusterNode.getAddr());
+        }
+        
+        master.stop();
+
+        for (int j = 0; j < 2000; j++) {
+            RFuture<?> f2 = redisson.getBucket("" + j).setAsync("");
+            futures.add(f2);
+        }
+        
+        System.out.println("master " + master.getRedisServerAddressAndPort() + " has been stopped!");
+        
+        Thread.sleep(TimeUnit.SECONDS.toMillis(30));
+        
+        RedisProcess newMaster = null;
+        Collection<ClusterNode> newMasterNodes = redisson.getClusterNodesGroup().getNodes(NodeType.MASTER);
+        for (ClusterNode clusterNode : newMasterNodes) {
+            if (!oldMasters.contains(clusterNode.getAddr())) {
+                newMaster = process.getNodes().stream().filter(x -> x.getRedisServerPort() == clusterNode.getAddr().getPort()).findFirst().get();
+                break;
+            }
+        }
+        
+        assertThat(newMaster).isNotNull();
+        
+        for (RFuture<?> rFuture : futures) {
+            rFuture.awaitUninterruptibly();
+            if (!rFuture.isSuccess()) {
+                Assert.fail();
+            }
+        }
+        
+        redisson.shutdown();
+        process.shutdown();
+    }
+
+    @Test
+    public void testFailoverInCluster() throws Exception {
+        RedisRunner master1 = new RedisRunner().port(6890).randomDir().nosave();
+        RedisRunner master2 = new RedisRunner().port(6891).randomDir().nosave();
+        RedisRunner master3 = new RedisRunner().port(6892).randomDir().nosave();
+        RedisRunner slave1 = new RedisRunner().port(6900).randomDir().nosave();
+        RedisRunner slave2 = new RedisRunner().port(6901).randomDir().nosave();
+        RedisRunner slave3 = new RedisRunner().port(6902).randomDir().nosave();
+        RedisRunner slave4 = new RedisRunner().port(6903).randomDir().nosave();
+        
+        ClusterRunner clusterRunner = new ClusterRunner()
+                .addNode(master1, slave1, slave4)
+                .addNode(master2, slave2)
+                .addNode(master3, slave3);
+        ClusterProcesses process = clusterRunner.run();
+        
+        Thread.sleep(5000); 
+        
+        Config config = new Config();
+        config.useClusterServers()
+        .setLoadBalancer(new RandomLoadBalancer())
+        .addNodeAddress(process.getNodes().stream().findAny().get().getRedisServerAddressAndPort());
+        RedissonClient redisson = Redisson.create(config);
+       
+        RedisProcess master = process.getNodes().stream().filter(x -> x.getRedisServerPort() == master1.getPort()).findFirst().get();
+        
+        List<RFuture<?>> futures = new ArrayList<RFuture<?>>();
+        CountDownLatch latch = new CountDownLatch(1);
+        Thread t = new Thread() {
+            public void run() {
+                for (int i = 0; i < 2000; i++) {
+                    RFuture<?> f1 = redisson.getBucket("i" + i).getAsync();
+                    RFuture<?> f2 = redisson.getBucket("i" + i).setAsync("");
+                    RFuture<?> f3 = redisson.getTopic("topic").publishAsync("testmsg");
+                    futures.add(f1);
+                    futures.add(f2);
+                    futures.add(f3);
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                    if (i % 100 == 0) {
+                        System.out.println("step: " + i);
+                    }
+                }
+                latch.countDown();
+            };
+        };
+        t.start();
+        t.join(1000);
+
+        Set<InetSocketAddress> oldMasters = new HashSet<>();
+        Collection<ClusterNode> masterNodes = redisson.getClusterNodesGroup().getNodes(NodeType.MASTER);
+        for (ClusterNode clusterNode : masterNodes) {
+            oldMasters.add(clusterNode.getAddr());
+        }
+        
+        master.stop();
+        System.out.println("master " + master.getRedisServerAddressAndPort() + " has been stopped!");
+        
+        Thread.sleep(TimeUnit.SECONDS.toMillis(90));
+        
+        RedisProcess newMaster = null;
+        Collection<ClusterNode> newMasterNodes = redisson.getClusterNodesGroup().getNodes(NodeType.MASTER);
+        for (ClusterNode clusterNode : newMasterNodes) {
+            if (!oldMasters.contains(clusterNode.getAddr())) {
+                newMaster = process.getNodes().stream().filter(x -> x.getRedisServerPort() == clusterNode.getAddr().getPort()).findFirst().get();
+                break;
+            }
+        }
+        
+        assertThat(newMaster).isNotNull();
+        
+        Thread.sleep(30000);
+        
+        newMaster.stop();
+
+        System.out.println("new master " + newMaster.getRedisServerAddressAndPort() + " has been stopped!");
+        
+        Thread.sleep(TimeUnit.SECONDS.toMillis(80));
+
+        assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue();
+
+        int errors = 0;
+        int success = 0;
+        int readonlyErrors = 0;
+        
+        for (RFuture<?> rFuture : futures) {
+            rFuture.awaitUninterruptibly();
+            if (!rFuture.isSuccess()) {
+                errors++;
+            } else {
+                success++;
+            }
+        }
+        
+        System.out.println("errors " + errors + " success " + success);
+
+        for (RFuture<?> rFuture : futures) {
+            if (rFuture.isSuccess()) {
+                System.out.println(rFuture.isSuccess());
+            } else {
+                rFuture.cause().printStackTrace();
+            }
+        }
+        
+        assertThat(readonlyErrors).isZero();
+        
+        redisson.shutdown();
+        process.shutdown();
     }
 
     
@@ -577,6 +799,66 @@ public class RedissonTest {
         Assert.assertTrue(nodes.pingAll());
     }
 
+    @Test
+    public void testSentinelStartup() throws Exception {
+        RedisRunner.RedisProcess master = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .run();
+        RedisRunner.RedisProcess slave1 = new RedisRunner()
+                .port(6380)
+                .nosave()
+                .randomDir()
+                .slaveof("127.0.0.1", 6379)
+                .run();
+        RedisRunner.RedisProcess slave2 = new RedisRunner()
+                .port(6381)
+                .nosave()
+                .randomDir()
+                .slaveof("127.0.0.1", 6379)
+                .run();
+        RedisRunner.RedisProcess sentinel1 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26379)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        RedisRunner.RedisProcess sentinel2 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26380)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        RedisRunner.RedisProcess sentinel3 = new RedisRunner()
+                .nosave()
+                .randomDir()
+                .port(26381)
+                .sentinel()
+                .sentinelMonitor("myMaster", "127.0.0.1", 6379, 2)
+                .run();
+        
+        Thread.sleep(5000); 
+        
+        Config config = new Config();
+        config.useSentinelServers()
+            .setLoadBalancer(new RandomLoadBalancer())
+            .addSentinelAddress(sentinel3.getRedisServerAddressAndPort()).setMasterName("myMaster");
+        
+        long t = System.currentTimeMillis();
+        RedissonClient redisson = Redisson.create(config);
+        assertThat(System.currentTimeMillis() - t).isLessThan(2000L);
+        redisson.shutdown();
+        
+        sentinel1.stop();
+        sentinel2.stop();
+        sentinel3.stop();
+        master.stop();
+        slave1.stop();
+        slave2.stop();
+    }
+    
 //    @Test
     public void testSentinel() {
         NodesGroup<Node> nodes = redisson.getNodesGroup();
@@ -633,20 +915,6 @@ public class RedissonTest {
         assertThat(c.toYAML()).isEqualTo(t);
     }
     
-//    @Test
-    public void testCluster() {
-        NodesGroup<ClusterNode> nodes = redisson.getClusterNodesGroup();
-        Assert.assertEquals(2, nodes.getNodes().size());
-
-        nodes.getNodes().stream().forEach((node) -> {
-            Map<String, String> params = node.info();
-            Assert.assertNotNull(params);
-            Assert.assertTrue(node.ping());
-        });
-
-        Assert.assertTrue(nodes.pingAll());
-    }
-
     @Test
     public void testNodesInCluster() throws Exception {
         RedisRunner master1 = new RedisRunner().randomPort().randomDir().nosave();
@@ -778,15 +1046,6 @@ public class RedissonTest {
     public void testClusterConnectionFail() throws InterruptedException {
         Config config = new Config();
         config.useClusterServers().addNodeAddress("redis://127.99.0.1:1111");
-        Redisson.create(config);
-
-        Thread.sleep(1500);
-    }
-
-    @Test(expected = RedisConnectionException.class)
-    public void testElasticacheConnectionFail() throws InterruptedException {
-        Config config = new Config();
-        config.useElasticacheServers().addNodeAddress("redis://127.99.0.1:1111");
         Redisson.create(config);
 
         Thread.sleep(1500);
